@@ -2,6 +2,8 @@
 
 import ollama
 from pathlib import Path
+import re
+from datetime import datetime
 
 def load_pattern(pattern_path):
     """Load a pattern file"""
@@ -160,6 +162,70 @@ If none are suitable, respond with: NONE
         print(f"[Error in pattern selection: {e}]")
         return None
 
+def extract_code_from_response(response_text):
+    """Extract code block from AI response and remove documentation comments"""
+    # Look for ```javascript ... ``` blocks
+    pattern = r'```(?:javascript|python|jsx|js|py|typescript|ts)?\n(.*?)```'
+    matches = re.findall(pattern, response_text, re.DOTALL)
+    
+    if matches:
+        code = matches[0].strip()
+        
+        # Remove multi-line documentation comments (/** ... */)
+        # These belong in the notes file, not the code
+        code = re.sub(r'/\*\*.*?\*/', '', code, flags=re.DOTALL)
+        
+        # Clean up extra blank lines (3+ newlines become 2)
+        code = re.sub(r'\n{3,}', '\n\n', code)
+        
+        return code.strip()
+    
+    # No code block found
+    return None
+def extract_explanation_from_response(response_text):
+    """Extract explanation text (everything after code block)"""
+    # Split on code block
+    parts = re.split(r'```.*?```', response_text, flags=re.DOTALL)
+    
+    if len(parts) > 1:
+        # Return text after last code block
+        return parts[-1].strip()
+    
+    return response_text.strip()
+
+def save_generated_files(code, explanation, resource_name="generated"):
+    """Save code and explanation to files"""
+    
+    # Create output directory
+    output_dir = Path('output')
+    output_dir.mkdir(exist_ok=True)
+    
+    # Generate filenames (simple, no timestamp)
+    code_filename = f"{resource_name}.js"
+    notes_filename = f"{resource_name}_notes.txt"
+    
+    code_path = output_dir / code_filename
+    notes_path = output_dir / notes_filename
+    
+    # Get current timestamp for file content
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    
+    # Add timestamp as comment to code file
+    code_with_timestamp = f"// Generated: {timestamp}\n\n{code}"
+    code_path.write_text(code_with_timestamp)
+    print(f"\n✅ Saved code: {code_path}")
+    
+    # Save notes with timestamp at top
+    notes_content = f"Generated: {timestamp}\n\n"
+    notes_content += f"Resource: {resource_name}\n\n"
+    notes_content += "=== Explanation ===\n\n"
+    notes_content += explanation
+    
+    notes_path.write_text(notes_content)
+    print(f"✅ Saved notes: {notes_path}")
+    
+    return code_path, notes_path
+
 def get_response(user_input, use_pattern=False):
     """Get response from Ollama with optional pattern"""
     
@@ -182,16 +248,54 @@ def get_response(user_input, use_pattern=False):
 
 USER REQUEST: {user_input}
 
-INSTRUCTIONS:
-1. Use the EXACT structure from the reference pattern above
-2. Copy the error handling approach from the pattern
-3. Copy the authentication/security implementation from the pattern
-4. Adapt variable names and endpoint paths to match the user's request
-5. Do NOT invent new middleware or controller structures - use what's in the pattern
-6. Generate ONLY the production code - exclude all pattern documentation comments (/** ... */)
-7. Include only inline comments that are essential to understanding the code
+CRITICAL INSTRUCTIONS - READ CAREFULLY:
 
-Your code should look structurally identical to the pattern, just adapted for: {user_input}
+1. DO NOT REMOVE ANY CODE from the pattern
+2. DO NOT create placeholder comments like "// logic here"
+3. DO NOT simplify or abstract away database queries
+4. KEEP ALL the implementation details - database queries, pagination logic, error handling
+
+5. What you SHOULD change:
+   - Variable names (users → products)
+   - Table names in SQL queries (FROM users → FROM products)
+   - Route paths (/users → /products)
+   - Error messages ("users" → "products")
+
+6. What you MUST KEEP:
+   - All SQL queries (just change table/column names)
+   - All pagination calculations (offset, limit, totalPages)
+   - All error handling (try/catch blocks)
+   - All security practices (parameterized queries with $1, $2)
+   - All response structure (data, pagination metadata)
+
+7. Generate ONLY the production code - exclude all pattern documentation comments (/** ... */)
+8. Include only inline comments that are essential to understanding the code
+
+EXAMPLE OF CORRECT ADAPTATION:
+
+Pattern shows:
+```javascript
+const users = await db.query(
+  'SELECT id, email FROM users LIMIT $1 OFFSET $2',
+  [limit, offset]
+);
+```
+
+If user asks for "products", generate:
+```javascript
+const products = await db.query(
+  'SELECT id, name FROM products LIMIT $1 OFFSET $2',
+  [limit, offset]
+);
+```
+
+NOT:
+```javascript
+const products = await // fetch products logic here  ❌ WRONG
+```
+
+Generate the COMPLETE, WORKING code with all queries and logic included.
+Do not leave ANY placeholders or TODO comments.
 
 Output format:
 1. First, generate the clean production-ready code in a code block
@@ -238,7 +342,20 @@ Generate the code and explain your decisions.
             prompt=prompt
         )
         
-        return response['response']
+        response_text = response['response']
+        
+        # Extract code and explanation
+        code = extract_code_from_response(response_text)
+        explanation = extract_explanation_from_response(response_text)
+        
+        if code:
+            # Ask if user wants to save
+            save = input("\n💾 Save generated code to file? (y/n): ").strip().lower()
+            if save == 'y':
+                resource = input("Resource name (e.g., products, users): ").strip() or "generated"
+                save_generated_files(code, explanation, resource)
+        
+        return response_text
     except Exception as e:
         return f"Error generating response: {e}"
 
