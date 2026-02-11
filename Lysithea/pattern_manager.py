@@ -1,9 +1,31 @@
 # lysithea/pattern_manager.py
+
+import re
+
 """
 Pattern file management - loading, listing, and mapping operations to patterns
 """
 
 from pathlib import Path
+
+def get_pattern_metadata(pattern_path):
+    """Extract metadata from pattern file"""
+    pattern_content = load_pattern(pattern_path)
+    if not pattern_content:
+        return None
+    
+    # Extract @output-dir (default: output)
+    output_dir_match = re.search(r'@output-dir\s+(.+)', pattern_content)
+    output_dir = output_dir_match.group(1).strip() if output_dir_match else 'output'
+    
+    # Extract @file-naming (default: {resource}.js)
+    file_naming_match = re.search(r'@file-naming\s+(.+)', pattern_content)
+    file_naming = file_naming_match.group(1).strip() if file_naming_match else '{resource}.js'
+    
+    return {
+        'output_dir': output_dir,
+        'file_naming': file_naming
+    }
 
 def load_pattern(pattern_path):
     """Load a pattern file"""

@@ -19,10 +19,13 @@ Rules:
 1. Find resource name (products, users, orders, etc.)
 2. Map to operations: GET all, GET by ID, POST, PUT, DELETE
 4. Output ONLY the format below - NO explanations, NO prose
+5. if the user requires authentication include the authentication patterns required, also do not duplicate middleware / authentication if its noted once it will work for all resources
 
 Required format:
 RESOURCES:
 - [resource]: [operations]
+MIDDLEWARE:
+- [type]
 
 Input: "CRUD for users"  
 RESOURCES:
@@ -44,53 +47,74 @@ Output (format only, no explanations):
         ai_response = response['response'].strip()
         print(f"\n{ai_response}\n")
         
-        # Parse multiple resources and their operations
-        resources = []  # List of {name: "products", operations: [...]}
-        
+        # Parse resources and middleware in one pass
+        resources = []
+        middleware = []
         in_resources = False
+        in_middleware = False
+        
         for line in ai_response.split('\n'):
             line = line.strip()
             
-            # Check if we're entering resources section
+            # Check if entering resources section
             if 'RESOURCES:' in line or 'RESOURCE:' in line:
                 in_resources = True
+                in_middleware = False
                 continue
             
-            # Parse each resource line: "- products: GET all, POST, PUT"
-            if in_resources and line.startswith('-'):
-                # Split on first colon: "- products: GET all, POST"
-                if ':' in line:
-                    parts = line.lstrip('- ').split(':', 1)
-                    resource_name = parts[0].strip()
-                    operations_str = parts[1].strip() if len(parts) > 1 else ""
-                    
-                    # Clean resource name
-                    resource_name = resource_name.lstrip('/').strip()
-                    resource_name = re.sub(r'[^\w-]', '', resource_name)
-                    
-                    # Parse operations (comma-separated)
-                    operations = []
-                    if operations_str:
-                        for op in operations_str.split(','):
-                            op_clean = op.strip()
-                            if op_clean:
-                                operations.append(op_clean)
-                    
-                    if resource_name and operations:
-                        resources.append({
-                            'name': resource_name,
-                            'operations': operations
-                        })
+            # Check if entering middleware section
+            if 'MIDDLEWARE' in line:
+                in_middleware = True
+                in_resources = False
+                continue
+            
+            # Parse resource lines (must have colon)
+            if in_resources and line.startswith('-') and ':' in line:
+                parts = line.lstrip('- ').split(':', 1)
+                resource_name = parts[0].strip()
+                operations_str = parts[1].strip() if len(parts) > 1 else ""
+                
+                # Clean resource name
+                resource_name = resource_name.lstrip('/').strip()
+                resource_name = re.sub(r'[^\w-]', '', resource_name)
+                
+                # Parse operations
+                operations = []
+                if operations_str:
+                    for op in operations_str.split(','):
+                        op_clean = op.strip()
+                        if op_clean:
+                            operations.append(op_clean)
+                
+                if resource_name and operations:
+                    resources.append({
+                        'name': resource_name,
+                        'operations': operations
+                    })
+            
+            # Parse middleware lines (no colon needed)
+            if in_middleware and line.startswith('-'):
+                middleware_name = line.lstrip('- ').strip().lower()  # ← Add .lower()
+                if middleware_name:
+                    middleware.append(middleware_name)
         
-        if not resources:
-            print("[Could not parse any resources]")
+        # Return as dict
+        result = {
+            'resources': resources,
+            'middleware': middleware
+        }
+        
+        if not resources and not middleware:
+            print("[Could not parse anything]")
             return None
         
-        print(f"[Parsed: {len(resources)} resource(s)]")
+        print(f"[Parsed: {len(resources)} resource(s), {len(middleware)} middleware]")
         for res in resources:
             print(f"  - {res['name']}: {len(res['operations'])} operations")
+        for mw in middleware:
+            print(f"  - {mw} (middleware)")
         
-        return resources
+        return result
         
     except Exception as e:
         print(f"[Coordinator error: {e}]")
