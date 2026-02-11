@@ -1,6 +1,9 @@
 // patterns/javascript/express/routes/put-user-auth.js
 
 /**
+ * @output-dir api/routes
+ * @file-naming {resource}.js
+
  * PATTERN: Express PUT Route with Authentication and Validation
  *
  * USE WHEN:

@@ -1,6 +1,9 @@
 // patterns/javascript/express/routes/get-user-by-id-auth.js
 
 /**
+ * @output-dir api/routes
+ * @file-naming {resource}.js
+ * 
  * PATTERN: Express GET by ID Route with Authentication
  *
  * USE WHEN:
