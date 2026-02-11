@@ -75,8 +75,8 @@ router.get('/products', authenticateToken, async (req, res) => {
 ## Next Steps
 
 ### Immediate
-- [ ] File generation system (save code + explanation to disk)
-- [ ] Extract more backend patterns from Noble Market
+- [x] File generation system (save code + explanation to disk)
+- [x] Create more pattern files for CRUD oporations
 - [ ] Test multi-file generation (route + controller)
 
 ### Soon
@@ -123,5 +123,6 @@ router.get('/products', authenticateToken, async (req, res) => {
 - Multi-file orchestration untested
 - No file output system yet (generates to console only)
 - Frontend/styling patterns not yet implemented
+
 
 ---
