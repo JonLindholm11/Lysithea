@@ -1,6 +1,6 @@
 # Lysithea
 
-Open-source multi-agent AI development platform powered by Claude.
+Open-source pattern enforced devolpment for ai agents(focusing on Ollama at the moment).
 
 ## 🚧 Early Development
 
@@ -8,34 +8,7 @@ This project is in active early development. Expect breaking changes and incompl
 
 ## Vision
 
-Lysithea uses 7 specialized AI agents that coordinate to build complete applications from natural language prompts.
-
-### The 7 Agents
-
-🏗️ **Architect** - Orchestrates the entire development process and interfaces directly with the user. Plans implementation and delegates tasks to specialized agents.
-
-🔌 **API Agent** - Builds server-side logic, REST/GraphQL endpoints, business logic, and middleware.
-
-🗄️ **Database Agent** - Designs database schemas, manages migrations, handles seeding, and optimizes queries.
-
-⚛️ **Frontend Agent** - Creates UI components, manages state, implements routing, and handles user interactions.
-
-🎨 **Design Agent** - Implements styling with CSS/Tailwind, ensures responsive design, and validates visual output.
-
-✅ **Testing Agent** - Writes unit tests, integration tests, and end-to-end tests to ensure code quality.
-
-🔍 **Checker Agent** - Reviews outputs from all agents, ensures consistency, maintains project scope, and documents changes.
-
-## Current Status
-
-- [ ] Basic CLI
-- [ ] Architect Agent
-- [ ] API Agent
-- [ ] Database Agent
-- [ ] Frontend Agent
-- [ ] Design Agent
-- [ ] Testing Agent
-- [ ] Checker Agent
+Lysithea is a pattern library built to improve AI generated code through pattern reinforcement to improve code quality
 
 ## Quick Start
 ```bash
@@ -46,17 +19,15 @@ cd lysithea
 # Install dependencies
 pip install -r requirements.txt --break-system-packages
 
-# Configure
-echo "ANTHROPIC_API_KEY=your_key_here" > .env
-
 # Run
 python -m lysithea.cli
 ```
 
-## Requirements
+## Prerequisites
 
-- Python 3.9+
-- Anthropic API key ([Get one here](https://console.anthropic.com))
+- Python 3.8+
+- Ollama installed and running
+- Llama 3.1 8B model pulled: ollama pull llama3.1:8b
 
 ## Contributing
 
