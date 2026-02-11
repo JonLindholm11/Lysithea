@@ -25,311 +25,452 @@ def list_available_patterns():
     
     return patterns
 
-def select_pattern_with_ai(user_input):
-    """Use AI to analyze request and suggest a pattern path, then verify it exists"""
+def coordinator_agent(user_input):
+    """Break down user request into sequential generation steps"""
     
-    # Step 1: AI suggests a pattern path without seeing all files
-    analysis_prompt = f"""You are a pattern selector for a code generator.
-
-CRITICAL: You MUST respond with the COMPLETE relative path from the patterns/ directory.
-
-Available pattern structures:
-- javascript/express/routes/ (Express.js route patterns)
-- javascript/express/middleware/ (Express.js middleware patterns)
-- python/fastapi/routes/ (FastAPI route patterns)
-- python/fastapi/middleware/ (FastAPI middleware patterns)
+    prompt = f"""You are a task coordinator for a code generator.
 
 User request: "{user_input}"
 
-Analyze the request and determine:
-1. What language/framework is needed (javascript/express, python/fastapi, etc.)
-2. What type of pattern (routes, middleware, models, etc.)
-3. What specific file matches
+Your job: Break this into SEQUENTIAL steps for code generation.
 
-You MUST respond with the FULL path including language and framework.
+Available operations:
+- GET all (list with pagination and authentication)
+- GET by ID (single resource by ID with authentication)
+- POST (create new resource with validation and authentication)
+- PUT (update existing resource with validation and authentication)
+- DELETE (remove resource with authentication)
 
-WRONG EXAMPLES:
-- routes/users-get.js
-- get-users-auth.js
+Analyze the request and identify:
+1. What resource is being requested (e.g., "products", "users", "orders")
+2. What operations are needed
 
-CORRECT EXAMPLES:
-- javascript/express/routes/get-users-auth.js
-- python/fastapi/routes/get-users-auth.py
+Common patterns:
+- "complete CRUD" = all 5 operations
+- "basic API" = GET all, GET by ID, POST
+- "read-only API" = GET all, GET by ID
 
-Format your response EXACTLY like this (no extra text):
-ANALYSIS: [your reasoning including language/framework choice]
-SUGGESTED_PATTERN: [FULL path like javascript/express/routes/get-users-auth.js]
+Format your response EXACTLY like this:
+
+RESOURCE: [resource name]
+OPERATIONS:
+- GET all
+- GET by ID
+- POST
+- PUT
+- DELETE
+
+Only list operations that were requested. List them in this order for best results.
 """
     
-    print("\n[AI analyzing request...]")
+    print("\n[Coordinator Agent analyzing request...]")
     
     try:
         response = ollama.generate(
             model='llama3.1:8b',
-            prompt=analysis_prompt
+            prompt=prompt
         )
         
         ai_response = response['response'].strip()
         print(f"\n{ai_response}\n")
         
-        # Extract suggested pattern
-        suggested_pattern = None
+        # Parse resource name
+        resource = None
         for line in ai_response.split('\n'):
-            if 'SUGGESTED_PATTERN:' in line:
-                suggested_pattern = line.split('SUGGESTED_PATTERN:')[1].strip()
+            if 'RESOURCE:' in line:
+                resource = line.split('RESOURCE:')[1].strip()
+                # Clean the resource name - remove leading slashes and special chars
+                resource = resource.lstrip('/').strip()
+                resource = re.sub(r'[^\w-]', '', resource)
                 break
         
-        if not suggested_pattern or suggested_pattern == "NONE":
-            print("[No pattern suggested]")
-            return None
-        
-        # Step 2: Check if suggested pattern exists
-        pattern_path = Path('..') / 'patterns' / suggested_pattern
-        
-        if not pattern_path.exists():
-            print(f"[Pattern '{suggested_pattern}' does not exist]")
+        # Parse operations
+        operations = []
+        in_operations = False
+        for line in ai_response.split('\n'):
+            if 'OPERATIONS:' in line or 'OPERATION:' in line:
+                in_operations = True
+                continue
             
-            # Show what DOES exist in that directory
-            parent_dir = pattern_path.parent
-            if parent_dir.exists():
-                available = [f.name for f in parent_dir.glob('*.js')]
-                if available:
-                    print(f"Available in {parent_dir.relative_to(Path('..') / 'patterns')}/:")
-                    for f in available:
-                        print(f"  - {f}")
-                    
-                    # AI finds similar pattern to adapt
-                    fallback_prompt = f"""The exact pattern '{suggested_pattern}' doesn't exist.
-
-Available patterns in the same category:
-{chr(10).join(f"- {f}" for f in available)}
-
-User request: "{user_input}"
-
-Which of these available patterns can be ADAPTED to fulfill the user's request?
-Consider patterns that have similar structure (GET routes, authentication, etc.)
-
-Respond with ONLY the filename that's most similar.
-If none are suitable, respond with: NONE
-"""
-                    
-                    print("\n[AI finding similar pattern to adapt...]")
-                    fallback_response = ollama.generate(
-                        model='llama3.1:8b',
-                        prompt=fallback_prompt
-                    )
-                    
-                    fallback_pattern = fallback_response['response'].strip()
-                    print(f"AI suggests adapting: {fallback_pattern}")
-                    
-                    # Validate fallback pattern exists
-                    for available_file in available:
-                        if available_file in fallback_pattern or fallback_pattern in available_file:
-                            approval = input(f"\nAdapt '{available_file}' for this request? (yes/no): ").strip().lower()
-                            if approval == 'yes':
-                                # Return the path relative to patterns/
-                                return str(parent_dir.relative_to(Path('..') / 'patterns') / available_file)
-                            else:
-                                print("[Pattern adaptation rejected - using baseline]")
-                                return None
-            
-            # Fallback to manual input
-            approval = input("\nSpecify a different pattern or press Enter to skip: ").strip()
-            if not approval:
-                return None
-            suggested_pattern = approval
+            if in_operations and line.strip().startswith('-'):
+                op = line.strip().lstrip('- ').strip()
+                if op:
+                    operations.append(op)
         
-        # Step 3: Ask user for approval (pattern exists)
-        approval = input(f"Use pattern '{suggested_pattern}'? (yes/no/specify): ").strip().lower()
+        if not resource or not operations:
+            print("[Could not parse coordinator response]")
+            return None, None
         
-        if approval == 'no':
-            print("[Pattern rejected - using baseline]")
-            return None
-        elif approval == 'yes':
-            return suggested_pattern
-        else:
-            # User wants to specify manually
-            manual_pattern = input("Enter pattern path (e.g., javascript/express/routes/get-users-auth.js): ").strip()
-            manual_path = Path('..') / 'patterns' / manual_pattern
-            
-            if manual_path.exists():
-                return manual_pattern
-            else:
-                print(f"[Pattern '{manual_pattern}' not found - using baseline]")
-                return None
-                
+        print(f"[Parsed: Resource='{resource}', Operations={len(operations)}]")
+        return resource, operations
+        
+        if not resource or not operations:
+            print("[Could not parse coordinator response]")
+            return None, None
+        
+        print(f"[Parsed: Resource='{resource}', Operations={len(operations)}]")
+        return resource, operations
+        
     except Exception as e:
-        print(f"[Error in pattern selection: {e}]")
+        print(f"[Coordinator error: {e}]")
+        return None, None
+
+def map_operation_to_pattern(operation):
+    """Map operation name to pattern file"""
+    op_lower = operation.lower()
+    
+    if 'get' in op_lower and ('by id' in op_lower or 'by-id' in op_lower or 'single' in op_lower):
+        return 'javascript/express/routes/get-users-by-id-auth.js'
+    elif 'get' in op_lower:
+        return 'javascript/express/routes/get-users-auth.js'
+    elif 'post' in op_lower or 'create' in op_lower:
+        return 'javascript/express/routes/post-users-auth.js'
+    elif 'put' in op_lower or 'update' in op_lower:
+        return 'javascript/express/routes/put-user-auth.js'
+    elif 'delete' in op_lower or 'remove' in op_lower:
+        return 'javascript/express/routes/delete-users-auth.js'
+    
+    return None
+
+def generate_with_pattern(resource, operations_so_far, pattern_paths):
+    """Generate code using multiple patterns"""
+    
+    # Load all patterns for operations so far
+    patterns_content = []
+    for pattern_path in pattern_paths:
+        pattern = load_pattern(pattern_path)
+        if pattern:
+            patterns_content.append(f"=== PATTERN: {pattern_path} ===\n{pattern}\n")
+    
+    if not patterns_content:
+        return None
+    
+    all_patterns = "\n".join(patterns_content)
+    operations_list = ", ".join(operations_so_far)
+    
+    prompt = f"""You are generating production-ready code based on existing patterns.
+
+{all_patterns}
+
+USER REQUEST: Generate {operations_list} routes for {resource} with authentication
+
+CRITICAL INSTRUCTIONS:
+
+1. You have {len(patterns_content)} pattern(s) above - one for each operation
+2. Generate ONE cohesive Express router file with ALL {len(patterns_content)} operations
+3. Follow each pattern's structure exactly for its operation
+
+4. DO NOT REMOVE ANY CODE from the patterns
+5. DO NOT create placeholder comments like "// logic here" or "// implementation here"
+6. KEEP ALL implementation details - queries, pagination, validation, error handling
+
+7. What you MUST change:
+   - Resource name: "users" → "{resource}"
+   - Table name: FROM users → FROM {resource}
+   - Route paths: /users → /{resource}
+   - Variable names: user/users → {resource} (singular/plural appropriately)
+   - Error messages: "user" → "{resource}"
+
+8. What you MUST KEEP EXACTLY:
+   - All SQL queries (just change table/column names)
+   - All pagination logic (page, limit, offset, totalPages)
+   - All validation logic (required fields, format checks)
+   - All error handling (try/catch, proper status codes)
+   - All security (parameterized queries with $1, $2, etc.)
+   - All response structures
+
+9. DO NOT include pattern documentation comments (/** ... */)
+10. Include only essential inline comments
+
+Generate COMPLETE, WORKING code. No placeholders. No TODOs.
+One code block with all {len(patterns_content)} operations.
+"""
+    
+    try:
+        response = ollama.generate(
+            model='llama3.1:8b',
+            prompt=prompt
+        )
+        
+        return response['response']
+    except Exception as e:
+        print(f"[Generation error: {e}]")
         return None
 
 def extract_code_from_response(response_text):
     """Extract code block from AI response and remove documentation comments"""
-    # Look for ```javascript ... ``` blocks
     pattern = r'```(?:javascript|python|jsx|js|py|typescript|ts)?\n(.*?)```'
     matches = re.findall(pattern, response_text, re.DOTALL)
     
     if matches:
         code = matches[0].strip()
-        
-        # Remove multi-line documentation comments (/** ... */)
-        # These belong in the notes file, not the code
         code = re.sub(r'/\*\*.*?\*/', '', code, flags=re.DOTALL)
-        
-        # Clean up extra blank lines (3+ newlines become 2)
         code = re.sub(r'\n{3,}', '\n\n', code)
-        
         return code.strip()
     
-    # No code block found
     return None
+
 def extract_explanation_from_response(response_text):
     """Extract explanation text (everything after code block)"""
-    # Split on code block
     parts = re.split(r'```.*?```', response_text, flags=re.DOTALL)
-    
     if len(parts) > 1:
-        # Return text after last code block
         return parts[-1].strip()
-    
     return response_text.strip()
 
-def save_generated_files(code, explanation, resource_name="generated"):
+def save_generated_files(code, explanation, resource_name="generated", append_notes=False):
     """Save code and explanation to files"""
     
-    # Create output directory
     output_dir = Path('output')
     output_dir.mkdir(exist_ok=True)
     
-    # Generate filenames (simple, no timestamp)
     code_filename = f"{resource_name}.js"
     notes_filename = f"{resource_name}_notes.txt"
     
     code_path = output_dir / code_filename
     notes_path = output_dir / notes_filename
     
-    # Get current timestamp for file content
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     
-    # Add timestamp as comment to code file
+    # Save code (always overwrite)
     code_with_timestamp = f"// Generated: {timestamp}\n\n{code}"
-    code_path.write_text(code_with_timestamp)
-    print(f"\n✅ Saved code: {code_path}")
+    code_path.write_text(code_with_timestamp, encoding='utf-8')
+    print(f"✅ Saved code: {code_path}")
     
-    # Save notes with timestamp at top
-    notes_content = f"Generated: {timestamp}\n\n"
-    notes_content += f"Resource: {resource_name}\n\n"
-    notes_content += "=== Explanation ===\n\n"
-    notes_content += explanation
+    # Save notes (append if requested)
+    if append_notes and notes_path.exists():
+        # Append to existing notes
+        existing_notes = notes_path.read_text(encoding='utf-8')
+        notes_content = f"\n\n{'='*60}\n"
+        notes_content += f"Added: {timestamp}\n\n"
+        notes_content += "=== Explanation ===\n\n"
+        notes_content += explanation
+        notes_path.write_text(existing_notes + notes_content, encoding='utf-8')
+    else:
+        # Create new notes file
+        notes_content = f"Generated: {timestamp}\n\n"
+        notes_content += f"Resource: {resource_name}\n\n"
+        notes_content += "=== Explanation ===\n\n"
+        notes_content += explanation
+        notes_path.write_text(notes_content, encoding='utf-8')
     
-    notes_path.write_text(notes_content)
     print(f"✅ Saved notes: {notes_path}")
     
     return code_path, notes_path
 
-def get_response(user_input, use_pattern=False):
-    """Get response from Ollama with optional pattern"""
+def execute_sequential_generation(resource, operations):
+    """Execute sequential code generation - one operation at a time, tracking what exists"""
     
-    # Initialize prompt as None
-    prompt = None
+    print(f"\n{'='*60}")
+    print(f"  SEQUENTIAL GENERATION: {resource}")
+    print(f"  Operations: {len(operations)}")
+    print('='*60)
     
-    if use_pattern:
-        # AI selects the best pattern
-        pattern_path = select_pattern_with_ai(user_input)
+    output_file = Path('output') / f"{resource}.js"
+    completed_routes = []  # Track what we've generated, don't show code
+    
+    for i, operation in enumerate(operations):
+        print(f"\n{'─'*60}")
+        print(f"Step {i+1}/{len(operations)}: {operation}")
+        print('─'*60)
         
-        if pattern_path:
-            pattern = load_pattern(pattern_path)
-            print(f"[Using pattern: {pattern_path}]")
-            
-            prompt = f"""You are generating production-ready code based on an existing pattern.
+        # Map operation to pattern file
+        pattern_path = map_operation_to_pattern(operation)
+        
+        if not pattern_path:
+            print(f"⚠️  Could not map operation '{operation}' to pattern, skipping")
+            continue
+        
+        # Load the pattern
+        pattern = load_pattern(pattern_path)
+        if not pattern:
+            print(f"⚠️  Pattern not found: {pattern_path}, skipping")
+            continue
+        
+        print(f"📋 Pattern: {pattern_path}")
+        
+        # Check if this is first route or additional
+        if completed_routes:
+            print(f"📝 File already has: {', '.join(completed_routes)}")
+        
+        # Generate with ONLY this pattern + list of existing routes
+        print(f"🔨 Generating {operation}...")
+        
+        if completed_routes:
+            # We have existing routes - ADD to them
+            prompt = f"""You are adding a new operation to an existing Express router file.
 
-=== REFERENCE PATTERN (FOLLOW THIS STRUCTURE EXACTLY) ===
+EXISTING ROUTES IN FILE (do not modify these):
+{chr(10).join(f'- {route}' for route in completed_routes)}
+
+PATTERN TO ADD:
+{pattern}
+
+TASK: Add the {operation} route for {resource}.
+
+CRITICAL INSTRUCTIONS:
+
+1. The file already has the routes listed above - DO NOT regenerate or modify them
+2. ADD ONLY the new {operation} route from the pattern
+3. Adapt the pattern from "users" to "{resource}"
+
+What you MUST change in the NEW route:
+- Variable names: users → {resource}
+- Table name: FROM users → FROM {resource}
+- Route path: /users → /{resource}
+- Error messages: "user" → "{resource}"
+
+What you MUST KEEP in the NEW route:
+- All SQL queries (just change table/column names)
+- All validation logic
+- All error handling  
+- All security (parameterized queries $1, $2)
+- All response structures
+
+4. Generate ONLY the new route code that will be added to the file
+5. DO NOT include:
+   - Pattern documentation comments (/** ... */)
+   - Boilerplate (const express = require...)
+   - Module.exports (already in file)
+   - Existing routes
+
+OUTPUT FORMAT:
+First: Code block with the route
+Then: 2-3 sentences explaining what you adapted from the pattern and what validation/security features are included in this route.
+
+Example explanation:
+"I adapted the GET by ID pattern for products, changing the table from 'users' to 'products' and the route path. The route includes ID validation, parameterized SQL queries to prevent injection, 404 handling for missing products, and proper error codes."
+"""
+        else:
+            # First operation - generate complete file with boilerplate
+            prompt = f"""You are generating production-ready code based on a pattern.
+
+=== REFERENCE PATTERN ===
 {pattern}
 === END PATTERN ===
 
-USER REQUEST: {user_input}
+USER REQUEST: Generate {operation} route for {resource} with authentication
 
-CRITICAL INSTRUCTIONS - READ CAREFULLY:
+CRITICAL INSTRUCTIONS:
 
-1. DO NOT REMOVE ANY CODE from the pattern
-2. DO NOT create placeholder comments like "// logic here"
-3. DO NOT simplify or abstract away database queries
-4. KEEP ALL the implementation details - database queries, pagination logic, error handling
+1. Follow the pattern structure EXACTLY
+2. DO NOT remove any code from the pattern
+3. DO NOT create placeholder comments
 
-5. What you SHOULD change:
-   - Variable names (users → products)
-   - Table names in SQL queries (FROM users → FROM products)
-   - Route paths (/users → /products)
-   - Error messages ("users" → "products")
+What you MUST change:
+- Variable names: users → {resource}
+- Table name: FROM users → FROM {resource}  
+- Route path: /users → /{resource}
+- Error messages: "user" → "{resource}"
 
-6. What you MUST KEEP:
-   - All SQL queries (just change table/column names)
-   - All pagination calculations (offset, limit, totalPages)
-   - All error handling (try/catch blocks)
-   - All security practices (parameterized queries with $1, $2)
-   - All response structure (data, pagination metadata)
+What you MUST KEEP:
+- All SQL queries (just change table/column names)
+- All validation logic (required fields, regex, duplicate checks)
+- All error handling (try/catch, status codes)
+- All security (parameterized queries $1, $2)
+- All response structures (data, pagination, error codes)
 
-7. Generate ONLY the production code - exclude all pattern documentation comments (/** ... */)
-8. Include only inline comments that are essential to understanding the code
+4. DO NOT include pattern documentation comments (/** ... */)
+5. Include only essential inline comments
 
-EXAMPLE OF CORRECT ADAPTATION:
+Generate COMPLETE router file with boilerplate (requires, router setup, module.exports).
 
-Pattern shows:
-```javascript
-const users = await db.query(
-  'SELECT id, email FROM users LIMIT $1 OFFSET $2',
-  [limit, offset]
-);
-```
-
-If user asks for "products", generate:
-```javascript
-const products = await db.query(
-  'SELECT id, name FROM products LIMIT $1 OFFSET $2',
-  [limit, offset]
-);
-```
-
-NOT:
-```javascript
-const products = await // fetch products logic here  ❌ WRONG
-```
-
-Generate the COMPLETE, WORKING code with all queries and logic included.
-Do not leave ANY placeholders or TODO comments.
-
-Output format:
-1. First, generate the clean production-ready code in a code block
-2. Then briefly explain (2-3 sentences) how it mirrors the pattern structure
-
-Do NOT include:
-- Pattern documentation headers (/** PATTERN: ... */)
-- USE WHEN sections
-- DEMONSTRATES sections
-- USAGE EXAMPLE sections
-- Any multi-line documentation comments from the pattern file
+Then after the code block, briefly explain what you generated.
 """
-        else:
-            print("[No matching pattern found - using baseline]")
-            prompt = f"""You are a helpful coding assistant.
+        
+        try:
+            response = ollama.generate(
+                model='llama3.1:8b',
+                prompt=prompt
+            )
+            
+            response_text = response['response']
 
-USER REQUEST: {user_input}
+            # DEBUG: Show what we got
+            print(f"\n[DEBUG] Response length: {len(response_text)} chars")
+            print(f"[DEBUG] First 500 chars:\n{response_text[:500]}\n")
 
-Generate the code and explain:
-- Why you structured it this way
-- What you included and why
-"""
-    else:
-        # Baseline - no pattern
-        prompt = f"""You are a helpful coding assistant.
-
-USER REQUEST: {user_input}
-
-Generate the code and explain your decisions.
-"""
+            # Extract code
+            code = extract_code_from_response(response_text)
+            explanation = extract_explanation_from_response(response_text)
+            
+            if not code:
+                print(f"⚠️  No code block found in response")
+                continue
+            
+            # If this is not the first route, we need to append to existing file
+            if completed_routes:
+                # Read existing file
+                existing_content = output_file.read_text(encoding='utf-8')
+                
+                # Strip ALL existing timestamp comments
+                existing_without_timestamps = re.sub(r'^//\s*Generated:.*?\n', '', existing_content, flags=re.MULTILINE)
+                
+                # Remove the module.exports line from existing
+                existing_without_export = re.sub(r'\s*module\.exports\s*=\s*router\s*;?\s*$', '', existing_without_timestamps, flags=re.MULTILINE)
+                
+                # Combine: existing code + new route + module.exports
+                combined_code = existing_without_export.rstrip() + "\n\n" + code.strip() + "\n\nmodule.exports = router;"
+                
+                # Save combined with single timestamp
+                timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                final_code = f"// Generated: {timestamp}\n\n{combined_code}"
+                output_file.write_text(final_code, encoding='utf-8')
+                print(f"✅ Saved code: {output_file}")
+                
+                # Save explanation (append)
+                notes_file = Path('output') / f"{resource}_notes.txt"
+                existing_notes = notes_file.read_text(encoding='utf-8')
+                
+                notes_content = f"\n\n{'='*60}\n"
+                notes_content += f"Added: {timestamp} - {operation}\n\n"
+                notes_content += "=== Explanation ===\n\n"
+                
+                if explanation and explanation.strip():
+                    notes_content += explanation
+                else:
+                    notes_content += f"Added {operation} route following the pattern structure with proper validation and error handling."
+                
+                notes_file.write_text(existing_notes + notes_content, encoding='utf-8')
+                print(f"✅ Saved notes: {notes_file}")
+            else:
+                # First route - save as-is
+                save_generated_files(code, explanation, resource, append_notes=False)
+            
+            # Track this route as completed
+            if "by ID" in operation or "by id" in operation.lower():
+                route_signature = f"{operation.split()[0].upper()} /{resource}/:id"
+            else:
+                route_signature = f"{operation.split()[0].upper()} /{resource}"
+            
+            completed_routes.append(route_signature)
+            
+            print(f"✅ Step {i+1} complete")
+            
+        except Exception as e:
+            print(f"❌ Generation failed: {e}")
+            continue
     
-    # Make sure prompt is set before calling ollama
-    if prompt is None:
-        prompt = f"""You are a helpful coding assistant.
+    print(f"\n{'='*60}")
+    print(f"  🎉 COMPLETE! Generated {len(completed_routes)} operations")
+    print(f"  📄 File: output/{resource}.js")
+    print('='*60)
+
+def get_response(user_input, use_pattern=False):
+    """Get response from Ollama with optional pattern coordination"""
+    
+    if use_pattern:
+        # Use coordinator agent to break down request
+        resource, operations = coordinator_agent(user_input)
+        
+        if resource and operations:
+            # Execute sequential generation
+            execute_sequential_generation(resource, operations)
+            return f"\n✅ Sequential generation complete for {resource}"
+        else:
+            print("[Coordinator could not parse request - falling back to baseline]")
+    
+    # Baseline mode (no patterns)
+    prompt = f"""You are a helpful coding assistant.
 
 USER REQUEST: {user_input}
 
@@ -342,25 +483,12 @@ Generate the code and explain your decisions.
             prompt=prompt
         )
         
-        response_text = response['response']
-        
-        # Extract code and explanation
-        code = extract_code_from_response(response_text)
-        explanation = extract_explanation_from_response(response_text)
-        
-        if code:
-            # Ask if user wants to save
-            save = input("\n💾 Save generated code to file? (y/n): ").strip().lower()
-            if save == 'y':
-                resource = input("Resource name (e.g., products, users): ").strip() or "generated"
-                save_generated_files(code, explanation, resource)
-        
-        return response_text
+        return response['response']
     except Exception as e:
         return f"Error generating response: {e}"
 
 def main():
-    print("Lysithea v0.1.0 - Pattern Test")
+    print("Lysithea v0.2.0 - Sequential Pattern Generation")
     print("\nCommands:")
     print("  /pattern   - Toggle pattern mode ON/OFF")
     print("  /list      - List available patterns")
@@ -380,8 +508,7 @@ def main():
         
         if user_input.lower() == '/pattern':
             use_pattern = not use_pattern
-            status = "ON" if use_pattern else "OFF"
-            print(f"Pattern mode: {status}")
+            print(f"Pattern mode: {'ON' if use_pattern else 'OFF'}")
             continue
         
         if user_input.lower() == '/list':
@@ -391,21 +518,16 @@ def main():
                 for p in patterns:
                     print(f"  - {p}")
             else:
-                print("No patterns found in patterns/ directory")
+                print("No patterns found")
             continue
         
         if user_input.lower() == '/status':
-            status = "ON (AI selects patterns)" if use_pattern else "OFF (baseline)"
-            print(f"Pattern mode: {status}")
-            if use_pattern:
-                patterns = list_available_patterns()
-                print(f"Available patterns: {len(patterns)}")
+            print(f"Pattern mode: {'ON' if use_pattern else 'OFF'}")
             continue
             
         try:
             response = get_response(user_input, use_pattern)
             print(f"\n{response}\n")
-            
         except Exception as e:
             print(f"Error: {e}")
             print("Make sure Ollama is running")
