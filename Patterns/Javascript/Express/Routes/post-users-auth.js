@@ -1,6 +1,9 @@
 // patterns/javascript/express/routes/post-users-auth.js
 
 /**
+ * @output-dir api/routes
+ * @file-naming {resource}.js
+ * 
  * PATTERN: Express POST Route with Authentication and Validation
  *
  * USE WHEN:

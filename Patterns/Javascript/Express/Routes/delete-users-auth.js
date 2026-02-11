@@ -1,6 +1,9 @@
 // patterns/javascript/express/routes/delete-user-auth.js
 
 /**
+ * @output-dir api/routes
+ * @file-naming {resource}.js
+ * 
  * PATTERN: Express DELETE Route with Authentication
  *
  * USE WHEN:
