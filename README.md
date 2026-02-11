@@ -43,4 +43,5 @@ See [ROADMAP.md](ROADMAP.md) for planned features and milestones.
 
 ---
 
-Built with ❤️ by [Jon Lindholm] | [GitHub](https://github.com/JonLindholm11) | [LinkedIn](https://www.linkedin.com/in/jon-lindholm-3507b338a/)
+
+Built by [Jon Lindholm] | [GitHub](https://github.com/JonLindholm11) | [LinkedIn](https://www.linkedin.com/in/jon-lindholm-3507b338a/)
