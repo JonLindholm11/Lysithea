@@ -4,7 +4,7 @@ Main CLI entry point for Lysithea code generator
 """
 
 from coordinator import coordinator_agent
-from generator import execute_sequential_generation
+from generator import execute_sequential_generation, generate_middleware
 from pattern_manager import list_available_patterns
 
 def main():
@@ -57,18 +57,31 @@ def get_response(user_input, use_pattern=False):
     
     if use_pattern:
         # Use coordinator agent to break down request
-        resources = coordinator_agent(user_input)
+        result = coordinator_agent(user_input)
         
-        if resources:
-            # Loop through each resource and generate
+        if result:
+            # Separate resources from middleware
+            resources = result.get('resources', [])
+            middleware = result.get('middleware', [])
+            
+            # Generate resources (if any)
             for resource_data in resources:
                 resource_name = resource_data['name']
                 operations = resource_data['operations']
-                
-                # Execute sequential generation for THIS resource
                 execute_sequential_generation(resource_name, operations)
             
-            return f"\n✅ Sequential generation complete for {len(resources)} resource(s)"
+            # Generate middleware (if any)
+            for middleware_name in middleware:
+                generate_middleware(middleware_name)
+            
+            # Build completion message
+            generated = []
+            if resources:
+                generated.append(f"{len(resources)} resource(s)")
+            if middleware:
+                generated.append(f"{len(middleware)} middleware")
+            
+            return f"\n✅ Generation complete: {', '.join(generated)}"
         else:
             print("[Coordinator could not parse request - falling back to baseline]")
     
