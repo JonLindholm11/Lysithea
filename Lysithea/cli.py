@@ -4,8 +4,9 @@ Main CLI entry point for Lysithea code generator
 """
 
 from coordinator import coordinator_agent
-from generators import execute_sequential_generation, generate_middleware, generate_database
+from generators import execute_sequential_generation, generate_middleware, generate_database, generate_schema
 from pattern_manager import list_available_patterns
+from file_manager import extract_table_from_schema
 
 def main():
     print("Lysithea v0.2.0 - Sequential Pattern Generation")
@@ -60,27 +61,40 @@ def get_response(user_input, use_pattern=False):
         result = coordinator_agent(user_input)
         
         if result:
-            # Separate resources, middleware, and database
             resources = result.get('resources', [])
             middleware = result.get('middleware', [])
             database = result.get('database', [])
+            schema = result.get('schema', [])
             
-            # Generate resources (if any)
-            for resource_data in resources:
-                resource_name = resource_data['name']
-                operations = resource_data['operations']
-                execute_sequential_generation(resource_name, operations)
+            # Generate schema FIRST
+            full_schema = None
+            if schema:
+                full_schema = generate_schema(resources)
             
-            # Generate middleware (if any)
-            for middleware_name in middleware:
-                generate_middleware(middleware_name)
-            
-            # Generate database (if any)
+            # Generate database connection
             for db_item in database:
                 generate_database(db_item)
             
+            # Generate middleware
+            for middleware_name in middleware:
+                generate_middleware(middleware_name)
+            
+            # Generate resources LAST (can reference schema)
+            for resource_data in resources:
+                resource_name = resource_data['name']
+                operations = resource_data['operations']
+                
+                # Extract just this resource's table from schema
+                table_schema = None
+                if full_schema:
+                    table_schema = extract_table_from_schema(full_schema, resource_name)
+                
+                execute_sequential_generation(resource_name, operations, schema=table_schema)
+            
             # Build completion message
             generated = []
+            if schema:
+                generated.append(f"{len(schema)} schema")
             if resources:
                 generated.append(f"{len(resources)} resource(s)")
             if middleware:

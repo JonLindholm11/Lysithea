@@ -17,24 +17,74 @@ CRITICAL INSTRUCTION: List ONLY the resources that appear in the user's request 
 
 Rules:
 1. Find resource name (products, users, orders, etc.)
-2. Map to operations: GET all, GET by ID, POST, PUT, DELETE
-4. Output ONLY the format below - NO explanations, NO prose
-5. if the user requires authentication include the authentication patterns required, also do not duplicate middleware / authentication if its noted once it will work for all resources
-6. If routes need database access (CRUD operations interact with data), include database connection automatically. Database connection is required for: GET all, GET by ID, POST, PUT, DELETE operations.
-7. Requests for GET alone are requesting GET all
-8. Requests for GET by ID request single item
+2. Map EXACTLY what user requests - don't infer additional operations
+3. BE LITERAL about operations:
+   - "GET" or "GET all" → GET all ONLY
+   - "GET by ID" or "GET :id" → GET by ID ONLY
+   - "CRUD" → ALL 5 operations: GET all, GET by ID, POST, PUT, DELETE
+   - "POST" → POST only
+   - "PUT" → PUT only
+   - "DELETE" → DELETE only
+4. Output ONLY the format below - NO explanations, NO comments, NO extra text after items
+5. If user requires authentication, include under MIDDLEWARE (no duplicates across resources)
+6. If generating any RESOURCES (routes), automatically include:
+   MIDDLEWARE:
+   - auth
+   DATABASE:
+   - connection
+   SCHEMA:
+   - tables
+   
+   Routes always need both authentication and database connection.
+7. Do not add operations the user didn't explicitly request
 
-Required format:
+Examples:
+
+Input: "CRUD for products"
 RESOURCES:
-- [resource]: [operations]
+- products: GET all, GET by ID, POST, PUT, DELETE
 MIDDLEWARE:
-- [type]
+- auth
 DATABASE:
 - connection
+SCHEMA:
+- tables
 
-Input: "CRUD for users"  
+Input: "GET users"
 RESOURCES:
-- users: GET all, GET by ID, POST, PUT, DELETE
+- users: GET all
+MIDDLEWARE:
+- auth
+DATABASE:
+- connection
+SCHEMA:
+- tables
+
+Input: "POST and PUT for orders"
+RESOURCES:
+- orders: POST, PUT
+MIDDLEWARE:
+- auth
+DATABASE:
+- connection
+SCHEMA:
+- tables
+
+Required format (include sections as needed):
+
+RESOURCES:
+- [resource]: [operations]
+
+MIDDLEWARE:
+- auth  ← ALWAYS include when RESOURCES present
+
+DATABASE:
+- connection  ← ALWAYS include when RESOURCES present
+
+SCHEMA:
+- tables  ← ALWAYS include when RESOURCES present
+
+IMPORTANT: Any request with RESOURCES automatically gets MIDDLEWARE (auth), DATABASE (connection), and SCHEMA (tables).
 
 Now parse: "{user_input}"
 
@@ -56,9 +106,11 @@ Output (format only, no explanations):
         resources = []
         middleware = []
         database = []
+        schema = []
         in_resources = False
         in_middleware = False
         in_database = False
+        in_schema = False
         
         for line in ai_response.split('\n'):
             line = line.strip()
@@ -68,6 +120,7 @@ Output (format only, no explanations):
                 in_resources = True
                 in_middleware = False
                 in_database = False
+                in_schema = False
                 continue
             
             # Check if entering middleware section
@@ -75,12 +128,23 @@ Output (format only, no explanations):
                 in_middleware = True
                 in_resources = False
                 in_database = False
+                in_schema = False
                 continue
 
             if 'DATABASE' in line:
                 in_database = True
                 in_middleware = False
                 in_resources = False
+                in_schema = False
+                continue
+            
+            if 'SCHEMA' in line:
+                in_schema = True
+                in_database = False
+                in_middleware = False
+                in_resources = False
+                continue
+
             
             # Parse resource lines (must have colon)
             if in_resources and line.startswith('-') and ':' in line:
@@ -91,6 +155,7 @@ Output (format only, no explanations):
                 # Clean resource name
                 resource_name = resource_name.lstrip('/').strip()
                 resource_name = re.sub(r'[^\w-]', '', resource_name)
+                resource_name = resource_name.lower()
                 
                 # Parse operations
                 operations = []
@@ -118,25 +183,33 @@ Output (format only, no explanations):
                 db_item = line.lstrip('- ').strip().lower()
                 if db_item:
                     database.append(db_item)
+
+            if in_schema and line.startswith('-'):
+                schema_item = line.lstrip('- ').strip().lower()
+                if schema_item:
+                    schema.append(schema_item)
         
         # Return as dict
         result = {
             'resources': resources,
             'middleware': middleware,
-            'database' : database
+            'database' : database,
+            'schema' : schema
         }
         
-        if not resources and not middleware and not database:  # ← Add database check
+        if not resources and not middleware and not database:
             print("[Could not parse anything]")
             return None
 
-        print(f"[Parsed: {len(resources)} resource(s), {len(middleware)} middleware, {len(database)} database]")
+        print(f"[Parsed: {len(resources)} resource(s), {len(middleware)} middleware, {len(database)} database, {len(schema)} schema]")
         for res in resources:
             print(f"  - {res['name']}: {len(res['operations'])} operations")
         for mw in middleware:
             print(f"  - {mw} (middleware)")
-        for db in database:  # ← Add this
+        for db in database:
             print(f"  - {db} (database)")
+        for sch in schema:
+            print(f" -{sch} (schema)")
                 
         return result
         
