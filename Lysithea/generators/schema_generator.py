@@ -54,18 +54,27 @@ Think about what fields this resource would realistically need:
 - What relationships exist? (e.g., orders need customer_id, reviews need product_id)
 - What common operations happen? (e.g., products need stock tracking, users need roles)
 
-Examples of well-designed tables:
-- products: name, description, price, stock_quantity, sku, image_url, category_id
-- users: email, username, password_hash, first_name, last_name, role
-- orders: customer_id, order_date, total, status
+CRITICAL: When adding foreign keys, ALWAYS use REFERENCES syntax:
+- category_id INTEGER REFERENCES categories(id)
+- customer_id INTEGER REFERENCES customers(id) ON DELETE CASCADE
+- brand_id INTEGER REFERENCES brands(id)
 
-Use these as inspiration, not rules. Design what makes sense for {resource_name}.
+Examples of well-designed tables with proper foreign keys:
+- products: name, description, price, stock_quantity, sku, image_url, category_id INTEGER REFERENCES categories(id)
+- orders: customer_id INTEGER REFERENCES customers(id), order_date, total, status
+- reviews: product_id INTEGER REFERENCES products(id), user_id INTEGER REFERENCES users(id), rating, comment
+
+IMPORTANT: Every foreign key MUST include REFERENCES clause. 
+Example: category_id INTEGER REFERENCES categories(id)
+NOT just: category_id INTEGER
+
+Use these as inspiration. Design what makes sense for {resource_name}.
 
 ALWAYS include: id (PRIMARY KEY), created_at, updated_at, is_deleted, deleted_at
-Add appropriate indexes for common queries.
-Remove pattern documentation comments.
+Add appropriate indexes for foreign keys and frequently queried columns.
+Remove documentation comments.
 
-Output the SQL code in a code block, then explain your field choices in 2-3 sentences.
+Output ONLY SQL code, then explain your field and relationship choices.
 """
         
         try:
