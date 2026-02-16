@@ -4,7 +4,7 @@ Main CLI entry point for Lysithea code generator
 """
 
 from coordinator import coordinator_agent
-from generator import execute_sequential_generation, generate_middleware
+from generators import execute_sequential_generation, generate_middleware, generate_database
 from pattern_manager import list_available_patterns
 
 def main():
@@ -60,9 +60,10 @@ def get_response(user_input, use_pattern=False):
         result = coordinator_agent(user_input)
         
         if result:
-            # Separate resources from middleware
+            # Separate resources, middleware, and database
             resources = result.get('resources', [])
             middleware = result.get('middleware', [])
+            database = result.get('database', [])
             
             # Generate resources (if any)
             for resource_data in resources:
@@ -74,12 +75,18 @@ def get_response(user_input, use_pattern=False):
             for middleware_name in middleware:
                 generate_middleware(middleware_name)
             
+            # Generate database (if any)
+            for db_item in database:
+                generate_database(db_item)
+            
             # Build completion message
             generated = []
             if resources:
                 generated.append(f"{len(resources)} resource(s)")
             if middleware:
                 generated.append(f"{len(middleware)} middleware")
+            if database:
+                generated.append(f"{len(database)} database")
             
             return f"\n✅ Generation complete: {', '.join(generated)}"
         else:
