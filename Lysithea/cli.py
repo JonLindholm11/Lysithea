@@ -4,7 +4,7 @@ Main CLI entry point for Lysithea code generator
 """
 
 from coordinator import coordinator_agent
-from generators import execute_sequential_generation, generate_middleware, generate_database, generate_schema
+from generators import execute_sequential_generation, generate_middleware, generate_database, generate_schema, generate_seeds
 from pattern_manager import list_available_patterns
 from file_manager import extract_table_from_schema
 
@@ -70,6 +70,10 @@ def get_response(user_input, use_pattern=False):
             full_schema = None
             if schema:
                 full_schema = generate_schema(resources)
+
+            # Generate seeds (needs schema to know columns)
+            if full_schema:
+                generate_seeds(resources, full_schema)
             
             # Generate database connection
             for db_item in database:
