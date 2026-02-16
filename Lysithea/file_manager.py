@@ -45,3 +45,33 @@ def save_generated_files(code, explanation, resource_name="generated", append_no
     print(f"✅ Saved notes: {notes_path}")
     
     return code_path, notes_path
+
+def extract_table_from_schema(schema_content, table_name):
+    """Extract single table definition from full schema SQL file
+    
+    Args:
+        schema_content: Full SQL schema as string
+        table_name: Name of table to extract (e.g., 'products')
+    
+    Returns:
+        String containing just the CREATE TABLE statement for this table,
+        or None if table not found
+    
+    Example:
+        >>> schema = "CREATE TABLE products (...); CREATE TABLE users (...);"
+        >>> extract_table_from_schema(schema, 'products')
+        "CREATE TABLE products (...);"
+    """
+    import re
+
+    # Pattern: Match CREATE TABLE {table_name} (...);
+    # Handles optional IF NOT EXISTS and captures everything in parentheses
+    pattern = rf'CREATE TABLE (?:IF NOT EXISTS )?{table_name}\s*\((.*?)\);'
+    
+    match = re.search(pattern, schema_content, re.DOTALL | re.IGNORECASE)
+    
+    if match:
+        # Return complete CREATE TABLE statement
+        return f"CREATE TABLE {table_name} ({match.group(1)});"
+
+    return None

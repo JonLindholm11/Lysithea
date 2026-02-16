@@ -1,4 +1,4 @@
-# lysithea/generator.py
+# lysithea/generators/resource_generator.py
 """
 Sequential code generation - builds files incrementally operation by operation
 """
@@ -12,7 +12,7 @@ from pattern_manager import load_pattern, map_operation_to_pattern, get_pattern_
 from parsers import extract_code_from_response, extract_explanation_from_response
 from file_manager import save_generated_files
 
-def execute_sequential_generation(resource, operations):
+def execute_sequential_generation(resource, operations, schema=None):
     """Execute sequential code generation - one operation at a time, tracking what exists"""
     
     print(f"\n{'='*60}")
@@ -20,8 +20,7 @@ def execute_sequential_generation(resource, operations):
     print(f"  Operations: {len(operations)}")
     print('='*60)
     
-     # Calculate output path ONCE before loop starts
-    # Use first operation's pattern to determine path
+    # Calculate output path ONCE before loop starts
     first_pattern = map_operation_to_pattern(operations[0])
     if first_pattern:
         metadata = get_pattern_metadata(first_pattern)
@@ -33,6 +32,18 @@ def execute_sequential_generation(resource, operations):
     else:
         # Fallback if no pattern found
         output_file = Path('output') / f"{resource}.js"
+    
+    # If schema provided, initialize notes file with schema at top
+    if schema:
+        print(f"[DEBUG] Adding schema to notes for {resource}")
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        notes_file = output_file.parent / f"{resource}_notes.txt"
+        notes_content = f"Generated: {timestamp}\n\n"
+        notes_content += f"Resource: {resource}\n\n"
+        notes_content += "=== Database Schema ===\n\n"
+        notes_content += f"```sql\n{schema}\n```\n\n"
+        notes_content += "=== Generation Log ===\n\n"
+        notes_file.write_text(notes_content, encoding='utf-8')
     
     completed_routes = []
     
@@ -73,6 +84,10 @@ EXISTING ROUTES IN FILE (do not modify these):
 PATTERN TO ADD:
 {pattern}
 
+{'=== DATABASE SCHEMA ===' if schema else ''}
+{f'The {resource} table columns:{chr(10)}{schema}{chr(10)}CRITICAL: Use ONLY these exact column names. Do NOT add fields like stock_quantity, image, or category unless they appear in the schema above.' if schema else ''}
+{'=== END SCHEMA ===' if schema else ''}
+
 TASK: Add the {operation} route for {resource}.
 
 CRITICAL INSTRUCTIONS:
@@ -86,6 +101,7 @@ What you MUST change in the NEW route:
 - Table name: FROM users → FROM {resource}
 - Route path: /users → /{resource}
 - Error messages: "user" → "{resource}"
+{'- Column names: Use ONLY columns from the schema above' if schema else ''}
 
 What you MUST KEEP in the NEW route:
 - All SQL queries (just change table/column names)
@@ -116,6 +132,10 @@ Example explanation:
 {pattern}
 === END PATTERN ===
 
+{'=== DATABASE SCHEMA ===' if schema else ''}
+{f'The {resource} table has these columns:{chr(10)}{schema}{chr(10)}CRITICAL: Use ONLY these exact column names in your queries. Do NOT add fields like stock_quantity, image, or category unless they exist in the schema above.' if schema else ''}
+{'=== END SCHEMA ===' if schema else ''}
+
 USER REQUEST: Generate {operation} route for {resource} with authentication
 
 CRITICAL INSTRUCTIONS:
@@ -129,9 +149,10 @@ What you MUST change:
 - Table name: FROM users → FROM {resource}  
 - Route path: /users → /{resource}
 - Error messages: "user" → "{resource}"
+{'- Column names: Use ONLY columns from the schema above' if schema else ''}
 
 What you MUST KEEP:
-- All SQL queries (just change table/column names)
+- All SQL queries (just change table/column names to match schema)
 - All validation logic (required fields, regex, duplicate checks)
 - All error handling (try/catch, status codes)
 - All security (parameterized queries $1, $2)
@@ -149,7 +170,7 @@ Then after the code block, briefly explain what you generated.
             response = ollama.generate(
                 model='llama3.1:8b',
                 prompt=prompt,
-                keep_alive=0  # ← Force context clear after each generation
+                keep_alive=0
             )
             
             response_text = response['response']
@@ -187,7 +208,7 @@ Then after the code block, briefly explain what you generated.
                 print(f"✅ Saved code: {output_file}")
                 
                 # Save explanation (append)
-                notes_file = Path('output') / f"{resource}_notes.txt"
+                notes_file = output_file.parent / f"{resource}_notes.txt"
                 existing_notes = notes_file.read_text(encoding='utf-8')
                 
                 notes_content = f"\n\n{'='*60}\n"
@@ -210,11 +231,24 @@ Then after the code block, briefly explain what you generated.
                 
                 # Save notes
                 notes_file = output_file.parent / f"{resource}_notes.txt"
-                notes_content = f"Generated: {timestamp}\n\n"
-                notes_content += f"Resource: {resource}\n\n"
-                notes_content += "=== Explanation ===\n\n"
-                notes_content += explanation if explanation else f"Generated {operation} route"
-                notes_file.write_text(notes_content, encoding='utf-8')
+                
+                # Check if schema already created notes file
+                if notes_file.exists() and schema:
+                    # Append to existing (schema is already at top)
+                    existing_notes = notes_file.read_text(encoding='utf-8')
+                    notes_content = f"\n{'='*60}\n"
+                    notes_content += f"Added: {timestamp} - {operation}\n\n"
+                    notes_content += "=== Explanation ===\n\n"
+                    notes_content += explanation if explanation else f"Generated {operation} route"
+                    notes_file.write_text(existing_notes + notes_content, encoding='utf-8')
+                else:
+                    # Create new notes file
+                    notes_content = f"Generated: {timestamp}\n\n"
+                    notes_content += f"Resource: {resource}\n\n"
+                    notes_content += "=== Explanation ===\n\n"
+                    notes_content += explanation if explanation else f"Generated {operation} route"
+                    notes_file.write_text(notes_content, encoding='utf-8')
+                
                 print(f"✅ Saved notes: {notes_file}")
             
             # Track this route as completed

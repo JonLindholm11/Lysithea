@@ -7,7 +7,7 @@ import re
 
 def extract_code_from_response(response_text):
     """Extract code block from AI response and remove documentation comments"""
-    pattern = r'```(?:javascript|python|jsx|js|py|typescript|ts)?\n(.*?)```'
+    pattern = r'```(?:sql|javascript|python|jsx|js|py|typescript|ts)?\n(.*?)```'
     matches = re.findall(pattern, response_text, re.DOTALL)
     
     if matches:

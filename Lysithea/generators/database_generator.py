@@ -80,6 +80,15 @@ Output just the code in a code block.
         output_file.write_text(final_code, encoding='utf-8')
         
         print(f"✅ Saved: {output_file}")
+
+        notes_file = output_file.parent / f"{db_type}_notes.txt"
+        notes_content = f"Generated: {timestamp}\n\n"
+        notes_content += f"Database: {db_type}\n\n"
+        notes_content += "=== Description ===\n\n"
+        notes_content += f"Database connection pool for PostgreSQL. Manages connection lifecycle and handles errors."
+        notes_file.write_text(notes_content, encoding='utf-8')
+        print(f"✅ Saved notes: {notes_file}")
+        
         print(f"✅ Database generation complete")
         
     except Exception as e:
