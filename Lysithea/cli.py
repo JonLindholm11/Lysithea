@@ -84,17 +84,17 @@ def get_response(user_input, use_pattern=False):
             for middleware_name in middleware:
                 generate_middleware(middleware_name)
             
-            # Generate resources LAST (can reference schema)
+            # Generate resources LAST (can reference schema and queries)
             for resource_data in resources:
                 resource_name = resource_data['name']
-                operations = resource_data['operations']
                 
                 # Extract just this resource's table from schema
                 table_schema = None
                 if full_schema:
                     table_schema = extract_table_from_schema(full_schema, resource_name)
                 
-                execute_sequential_generation(resource_name, operations, schema=table_schema)
+                # Generate routes based on query functions (no operations needed)
+                execute_sequential_generation(resource_name, schema=table_schema)
             
             # Build completion message
             generated = []

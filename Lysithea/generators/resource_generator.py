@@ -10,53 +10,94 @@ from datetime import datetime
 
 from pattern_manager import load_pattern, map_operation_to_pattern, get_pattern_metadata
 from parsers import extract_code_from_response, extract_explanation_from_response
-from file_manager import save_generated_files
+from file_manager import save_generated_files, extract_table_from_schema
 
-def execute_sequential_generation(resource, operations, schema=None):
-    """Execute sequential code generation - one operation at a time, tracking what exists"""
+def execute_sequential_generation(resource, schema=None):
+    """Execute sequential code generation based on query functions"""
     
     print(f"\n{'='*60}")
     print(f"  SEQUENTIAL GENERATION: {resource}")
-    print(f"  Operations: {len(operations)}")
     print('='*60)
     
-    # Calculate output path ONCE before loop starts
-    first_pattern = map_operation_to_pattern(operations[0])
-    if first_pattern:
-        metadata = get_pattern_metadata(first_pattern)
-        output_dir = metadata['output_dir'] if metadata else 'output'
-        file_naming = metadata['file_naming'] if metadata else f'{resource}.js'
-        filename = file_naming.replace('{resource}', resource)
-        output_file = Path('output') / output_dir / filename
-        output_file.parent.mkdir(parents=True, exist_ok=True)
-    else:
-        # Fallback if no pattern found
-        output_file = Path('output') / f"{resource}.js"
+    # Calculate output path
+    output_dir = 'api/routes'
+    filename = f'{resource}.js'
+    output_file = Path('output') / output_dir / filename
+    output_file.parent.mkdir(parents=True, exist_ok=True)
     
-    # If schema provided, initialize notes file with schema at top
+    # Load query function NAMES
+    query_file_path = Path('output') / 'db' / 'queries' / f'{resource}.queries.js'
+    all_query_functions = []
+    if query_file_path.exists():
+        try:
+            content = query_file_path.read_text(encoding='utf-8', errors='ignore')
+            pattern = r'export async function (\w+)\('
+            all_query_functions = re.findall(pattern, content)
+            print(f"📋 Found {len(all_query_functions)} query functions")
+        except Exception as e:
+            print(f"⚠️  Could not extract query functions: {e}")
+    
+    if not all_query_functions:
+        print("⚠️  No query functions found, cannot generate routes")
+        return
+    
+    # --------------------------
+    # Write deterministic boilerplate at the top
+    # --------------------------
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    import_line = f'const {{ {", ".join(all_query_functions)} }} = require("../../db/queries/{resource}.queries");\n'
+    
+    boilerplate = (
+        f"// Generated: {timestamp}\n\n"
+        "const express = require('express');\n"
+        "const router = express.Router();\n"
+        "const { authenticateToken } = require('../middleware/auth');\n"
+        f"{import_line}\n"
+    )
+    
+    # Write boilerplate to file (module.exports will be appended later)
+    output_file.write_text(boilerplate, encoding='utf-8')
+    
+    # Initialize notes file if schema is provided
+    notes_file = output_file.parent / f"{resource}_notes.txt"
     if schema:
-        print(f"[DEBUG] Adding schema to notes for {resource}")
-        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        notes_file = output_file.parent / f"{resource}_notes.txt"
-        notes_content = f"Generated: {timestamp}\n\n"
-        notes_content += f"Resource: {resource}\n\n"
+        notes_content = f"Generated: {timestamp}\n\nResource: {resource}\n\n"
         notes_content += "=== Database Schema ===\n\n"
         notes_content += f"```sql\n{schema}\n```\n\n"
         notes_content += "=== Generation Log ===\n\n"
         notes_file.write_text(notes_content, encoding='utf-8')
     
+    # Map each query function to a route
+    routes_to_generate = []
+    for func_name in all_query_functions:
+        route_info = map_query_to_route(func_name, resource)
+        if route_info:
+            routes_to_generate.append(route_info)
+    
+    print(f"📋 Will generate {len(routes_to_generate)} routes based on query functions")
+    
     completed_routes = []
     
-    for i, operation in enumerate(operations):
+    for i, route_info in enumerate(routes_to_generate):
         print(f"\n{'─'*60}")
-        print(f"Step {i+1}/{len(operations)}: {operation}")
+        print(f"Step {i+1}/{len(routes_to_generate)}: {route_info['method']} {route_info['path']}")
+        print(f"Using query function: {route_info['func']}")
         print('─'*60)
         
-        # Map operation to pattern file
-        pattern_path = map_operation_to_pattern(operation)
-        
-        if not pattern_path:
-            print(f"⚠️  Could not map operation '{operation}' to pattern, skipping")
+        # Map HTTP method to pattern
+        method_lower = route_info['method'].lower()
+        if method_lower == 'get' and ':id' in route_info['path']:
+            pattern_path = 'javascript/express/routes/get-users-by-id-auth.js'
+        elif method_lower == 'get':
+            pattern_path = 'javascript/express/routes/get-users-auth.js'
+        elif method_lower == 'post':
+            pattern_path = 'javascript/express/routes/post-users-auth.js'
+        elif method_lower == 'put':
+            pattern_path = 'javascript/express/routes/put-users-auth.js'
+        elif method_lower == 'delete':
+            pattern_path = 'javascript/express/routes/delete-users-auth.js'
+        else:
+            print(f"⚠️  No pattern for {method_lower}, skipping")
             continue
         
         # Load the pattern
@@ -67,103 +108,42 @@ def execute_sequential_generation(resource, operations, schema=None):
         
         print(f"📋 Pattern: {pattern_path}")
         
-        # Check if this is first route or additional
-        if completed_routes:
-            print(f"📝 File already has: {', '.join(completed_routes)}")
-        
-        # Generate with ONLY this pattern + list of existing routes
-        print(f"🔨 Generating {operation}...")
-        
-        if completed_routes:
-            # We have existing routes - ADD to them
-            prompt = f"""You are adding a new operation to an existing Express router file.
+        # Build prompt for the LLM
+        prompt = f"""You are adding a new route to an EXISTING Express router file.
 
-EXISTING ROUTES IN FILE (do not modify these):
-{chr(10).join(f'- {route}' for route in completed_routes)}
+THE FILE ALREADY HAS:
+- Express and router setup at the top
+- Query function imports at the top: const {{ {", ".join(all_query_functions)} }} = require("../../db/queries/{resource}.queries");
+- These routes: {chr(10).join(f'- {route}' for route in completed_routes)}
+- module.exports at the bottom
 
 PATTERN TO ADD:
 {pattern}
 
 {'=== DATABASE SCHEMA ===' if schema else ''}
-{f'The {resource} table columns:{chr(10)}{schema}{chr(10)}CRITICAL: Use ONLY these exact column names. Do NOT add fields like stock_quantity, image, or category unless they appear in the schema above.' if schema else ''}
+{f'The {resource} table columns:{chr(10)}{schema}{chr(10)}CRITICAL: Use ONLY these exact column names.' if schema else ''}
 {'=== END SCHEMA ===' if schema else ''}
 
-TASK: Add the {operation} route for {resource}.
+QUERY FUNCTION TO USE:
+{route_info['func']} - This function is ALREADY IMPORTED at the top
 
-CRITICAL INSTRUCTIONS:
+TASK: Add a {route_info['method']} {route_info['path']} route that uses {route_info['func']}
 
-1. The file already has the routes listed above - DO NOT regenerate or modify them
-2. ADD ONLY the new {operation} route from the pattern
-3. Adapt the pattern from "users" to "{resource}"
+CRITICAL - DO NOT ADD:
+- express/router setup (already exists)
+- Query function imports (ALREADY IMPORTED AT TOP)
+- module.exports (already at bottom)  
+- ANY require() statements - the function is already imported!
 
-What you MUST change in the NEW route:
-- Variable names: users → {resource}
-- Table name: FROM users → FROM {resource}
-- Route path: /users → /{resource}
-- Error messages: "user" → "{resource}"
-{'- Column names: Use ONLY columns from the schema above' if schema else ''}
+ONLY ADD:
+router.{method_lower}("{route_info['path']}", authenticateToken, async (req, res) => {{
+  // Use {route_info['func']} which is already imported
+}});
 
-What you MUST KEEP in the NEW route:
-- All SQL queries (just change table/column names)
-- All validation logic
-- All error handling  
-- All security (parameterized queries $1, $2)
-- All response structures
+Change "users" to "{resource}" in the pattern.
+Use the {route_info['func']} function that is ALREADY imported at the top.
 
-4. Generate ONLY the new route code that will be added to the file
-5. DO NOT include:
-   - Pattern documentation comments (/** ... */)
-   - Boilerplate (const express = require...)
-   - Module.exports (already in file)
-   - Existing routes
-
-OUTPUT FORMAT:
-First: Code block with the route
-Then: 2-3 sentences explaining what you adapted from the pattern and what validation/security features are included in this route.
-
-Example explanation:
-"I adapted the GET by ID pattern for products, changing the table from 'users' to 'products' and the route path. The route includes ID validation, parameterized SQL queries to prevent injection, 404 handling for missing products, and proper error codes."
-"""
-        else:
-            # First operation - generate complete file with boilerplate
-            prompt = f"""You are generating production-ready code based on a pattern.
-
-=== REFERENCE PATTERN ===
-{pattern}
-=== END PATTERN ===
-
-{'=== DATABASE SCHEMA ===' if schema else ''}
-{f'The {resource} table has these columns:{chr(10)}{schema}{chr(10)}CRITICAL: Use ONLY these exact column names in your queries. Do NOT add fields like stock_quantity, image, or category unless they exist in the schema above.' if schema else ''}
-{'=== END SCHEMA ===' if schema else ''}
-
-USER REQUEST: Generate {operation} route for {resource} with authentication
-
-CRITICAL INSTRUCTIONS:
-
-1. Follow the pattern structure EXACTLY
-2. DO NOT remove any code from the pattern
-3. DO NOT create placeholder comments
-
-What you MUST change:
-- Variable names: users → {resource}
-- Table name: FROM users → FROM {resource}  
-- Route path: /users → /{resource}
-- Error messages: "user" → "{resource}"
-{'- Column names: Use ONLY columns from the schema above' if schema else ''}
-
-What you MUST KEEP:
-- All SQL queries (just change table/column names to match schema)
-- All validation logic (required fields, regex, duplicate checks)
-- All error handling (try/catch, status codes)
-- All security (parameterized queries $1, $2)
-- All response structures (data, pagination, error codes)
-
-4. DO NOT include pattern documentation comments (/** ... */)
-5. Include only essential inline comments
-
-Generate COMPLETE router file with boilerplate (requires, router setup, module.exports).
-
-Then after the code block, briefly explain what you generated.
+Generate ONLY the router.{method_lower}(...) code block. Nothing else. No imports!
 """
         
         try:
@@ -174,12 +154,6 @@ Then after the code block, briefly explain what you generated.
             )
             
             response_text = response['response']
-
-            # DEBUG: Show what we got
-            print(f"\n[DEBUG] Response length: {len(response_text)} chars")
-            print(f"[DEBUG] First 500 chars:\n{response_text[:500]}\n")
-
-            # Extract code
             code = extract_code_from_response(response_text)
             explanation = extract_explanation_from_response(response_text)
             
@@ -187,85 +161,77 @@ Then after the code block, briefly explain what you generated.
                 print(f"⚠️  No code block found in response")
                 continue
             
-            # If this is not the first route, we need to append to existing file
-            if completed_routes:
-                # Read existing file
-                existing_content = output_file.read_text(encoding='utf-8')
-                
-                # Strip ALL existing timestamp comments
-                existing_without_timestamps = re.sub(r'^//\s*Generated:.*?\n', '', existing_content, flags=re.MULTILINE)
-                
-                # Remove the module.exports line from existing
-                existing_without_export = re.sub(r'\s*module\.exports\s*=\s*router\s*;?\s*$', '', existing_without_timestamps, flags=re.MULTILINE)
-                
-                # Combine: existing code + new route + module.exports
-                combined_code = existing_without_export.rstrip() + "\n\n" + code.strip() + "\n\nmodule.exports = router;"
-                
-                # Save combined with single timestamp
-                timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                final_code = f"// Generated: {timestamp}\n\n{combined_code}"
-                output_file.write_text(final_code, encoding='utf-8')
-                print(f"✅ Saved code: {output_file}")
-                
-                # Save explanation (append)
-                notes_file = output_file.parent / f"{resource}_notes.txt"
-                existing_notes = notes_file.read_text(encoding='utf-8')
-                
-                notes_content = f"\n\n{'='*60}\n"
-                notes_content += f"Added: {timestamp} - {operation}\n\n"
-                notes_content += "=== Explanation ===\n\n"
-                
-                if explanation and explanation.strip():
-                    notes_content += explanation
-                else:
-                    notes_content += f"Added {operation} route following the pattern structure with proper validation and error handling."
-                
-                notes_file.write_text(existing_notes + notes_content, encoding='utf-8')
-                print(f"✅ Saved notes: {notes_file}")
+            # Append generated route
+            existing_content = output_file.read_text(encoding='utf-8', errors='ignore')
+            combined_code = existing_content.rstrip() + "\n\n" + code.strip()
+            output_file.write_text(combined_code, encoding='utf-8')
+            
+            # Append notes
+            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            if notes_file.exists():
+                existing_notes = notes_file.read_text(encoding='utf-8', errors='ignore')
             else:
-                # First route - save to calculated output_file path
-                timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                final_code = f"// Generated: {timestamp}\n\n{code}"
-                output_file.write_text(final_code, encoding='utf-8')
-                print(f"✅ Saved code: {output_file}")
-                
-                # Save notes
-                notes_file = output_file.parent / f"{resource}_notes.txt"
-                
-                # Check if schema already created notes file
-                if notes_file.exists() and schema:
-                    # Append to existing (schema is already at top)
-                    existing_notes = notes_file.read_text(encoding='utf-8')
-                    notes_content = f"\n{'='*60}\n"
-                    notes_content += f"Added: {timestamp} - {operation}\n\n"
-                    notes_content += "=== Explanation ===\n\n"
-                    notes_content += explanation if explanation else f"Generated {operation} route"
-                    notes_file.write_text(existing_notes + notes_content, encoding='utf-8')
-                else:
-                    # Create new notes file
-                    notes_content = f"Generated: {timestamp}\n\n"
-                    notes_content += f"Resource: {resource}\n\n"
-                    notes_content += "=== Explanation ===\n\n"
-                    notes_content += explanation if explanation else f"Generated {operation} route"
-                    notes_file.write_text(notes_content, encoding='utf-8')
-                
-                print(f"✅ Saved notes: {notes_file}")
+                existing_notes = ''
+            notes_content = f"\n{'='*60}\nAdded: {timestamp} - {route_info['method']} {route_info['path']}\nQuery function: {route_info['func']}\n\n"
+            notes_content += "=== Explanation ===\n\n"
+            notes_content += explanation if explanation else f"Added {route_info['method']} route using {route_info['func']}."
+            notes_file.write_text(existing_notes + notes_content, encoding='utf-8')
             
-            # Track this route as completed
-            if "by ID" in operation or "by id" in operation.lower():
-                route_signature = f"{operation.split()[0].upper()} /{resource}/:id"
-            else:
-                route_signature = f"{operation.split()[0].upper()} /{resource}"
-            
-            completed_routes.append(route_signature)
-            
+            completed_routes.append(f"{route_info['method']} {route_info['path']}")
             print(f"✅ Step {i+1} complete")
             
         except Exception as e:
             print(f"❌ Generation failed: {e}")
             continue
     
+    # Finally, add module.exports at bottom
+    final_content = output_file.read_text(encoding='utf-8', errors='ignore').rstrip() + "\n\nmodule.exports = router;\n"
+    output_file.write_text(final_content, encoding='utf-8')
+    
     print(f"\n{'='*60}")
-    print(f"  🎉 COMPLETE! Generated {len(completed_routes)} operations")
-    print(f"  📄 File: output/{resource}.js")
+    print(f"  COMPLETE! Generated {len(completed_routes)} routes")
+    print(f"  File: {output_file}")
     print('='*60)
+
+
+def map_query_to_route(func_name, resource):
+    """Map query function name to route details"""
+    if resource.endswith('s'):
+        resource_singular = resource[:-1]
+    else:
+        resource_singular = resource
+    
+    resource_cap = resource_singular.capitalize()
+    
+    # CREATE
+    if func_name.startswith(f'create{resource_cap}'):
+        return {'method': 'POST', 'path': f'/{resource}', 'func': func_name}
+    
+    # GET ALL (without joins)
+    elif func_name == f'get{resource_cap}s':
+        return {'method': 'GET', 'path': f'/{resource}', 'func': func_name}
+    
+    # GET BY ID
+    elif 'ById' in func_name and func_name.startswith(f'get{resource_cap}'):
+        return {'method': 'GET', 'path': f'/{resource}/:id', 'func': func_name}
+    
+    # UPDATE
+    elif func_name.startswith(f'update{resource_cap}'):
+        return {'method': 'PUT', 'path': f'/{resource}/:id', 'func': func_name}
+    
+    # DELETE
+    elif func_name.startswith(f'delete{resource_cap}'):
+        return {'method': 'DELETE', 'path': f'/{resource}/:id', 'func': func_name}
+    
+    # GET BY FIELD (e.g., getProductsByCategoryId)
+    elif func_name.startswith(f'get{resource_cap}sBy'):
+        after_by = func_name.split('By')[1]
+        field_name = after_by.replace('WithDetails', '')
+        field_snake = re.sub(r'(?<!^)(?=[A-Z])', '_', field_name).lower()
+        return {'method': 'GET', 'path': f'/{resource}/by-{field_snake}/:{field_snake}', 'func': func_name}
+    
+    # GET WITH JOINS (all records) - skip if basic getProducts exists
+    elif func_name.startswith(f'get{resource_cap}s') and 'With' in func_name:
+        return None
+    
+    return None
