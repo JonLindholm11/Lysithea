@@ -1,38 +1,27 @@
 # Project Name
-<Your Project Name Here>
+Book Store
 
 # Stack
-Frontend: <React 18 + Tailwind or your choice>
-Backend: <Express.js + Node version>
-Database: <PostgreSQL, MySQL, MongoDB, etc.>
+Frontend: React 18 + Tailwind
+Backend: Express.js + Node 20
+Database: PostgreSQL
 
 # Features
-- Authentication: <email/password, JWT, OAuth, etc.>
-- Resources:
-  - <Resource Name 1>: <create, read, update, delete, custom functions>
-  - <Resource Name 2>: <...>
-- Extra Features: <reports, notifications, analytics, etc.>
+- Books: crud
 
 # API Requirements
-- Security: <JWT, OAuth, etc.>
-- Endpoint style: <RESTful, GraphQL, etc.>
-- Validation: <true/false, e.g., validate all inputs>
-- Rate limiting: <true/false>
-- Custom middleware: <logging, error handling, etc.>
+- Security: JWT
+- Endpoint style: RESTful
+- Validation: true
+- Rate limiting: false
 
 # Frontend Requirements
-- Pages: <Login, Register, Dashboard, etc.>
-- Components: <Resource list, forms, tables, etc.>
-- Styling: <Tailwind, MUI, Chakra, etc.>
-- Behavior: <form validation, async loading, etc.>
+- Pages: Dashboard, Books
 
 # Database / Schema Notes
 - Tables:
-  - <table name>: <columns and types>
-  - ...
+  - books: title, author, price, stock_quantity
 - Relationships:
-  - <table1> has many <table2>
-  - ...
 
 # Extra Notes
-- <Any other critical instructions, coding style, async/await rules, etc.>
+- Use async/await throughout

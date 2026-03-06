@@ -1,6 +1,20 @@
 # generators/schema_generator.py
+
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+
 """
-Database schema generation - CREATE TABLE statements for all resources
+Database schema generation
+
+Rule of Law: reads resources from file_manager.load_resources()
+             reads schema notes from file_manager.load_stack()
+             writes schema to file_manager.write_schema()
+
+Constraints:
+- Table name must match resource name exactly
+- Columns defined in prompt.md are required; LLM may add sensible extras
+- Foreign keys must only reference other tables defined in prompt.md
+- Hard fail if a resource has no schema notes in prompt.md
 """
 
 import ollama
@@ -9,138 +23,150 @@ from datetime import datetime
 
 from pattern_manager import load_pattern, get_pattern_metadata
 from parsers import extract_code_from_response, extract_explanation_from_response
+from file_manager import load_resources, load_stack, write_schema
 
-def generate_schema(resources):
-    """Generate database schema file with tables for all resources
-    
-    Args:
-        resources: List of resource dicts [{'name': 'products', 'operations': [...]}]
-    """
-    
+
+def generate_schema():
+    resources    = load_resources()
+    stack        = load_stack()
+    schema_notes = stack.get('database_schema', {}).get('tables', {})
+    defined_tables = list(schema_notes.keys())
+
     print(f"\n{'='*60}")
     print(f"  GENERATING SCHEMA: {len(resources)} table(s)")
     print('='*60)
-    
-    # Load schema pattern
+
+    # Hard fail if any resource is missing schema notes
+    missing = [r['name'] for r in resources if r['name'] not in schema_notes]
+    if missing:
+        raise RuntimeError(
+            f"\n[schema_generator] Missing schema notes in prompt.md for: {', '.join(missing)}\n\n"
+            f"Add entries under '# Database / Schema Notes' -> '- Tables:' for each resource.\n\n"
+            f"Example:\n"
+            f"  # Database / Schema Notes\n"
+            f"  - Tables:\n"
+            + "\n".join(f"    - {m}: column1, column2, column3" for m in missing)
+        )
+
     pattern_path = 'javascript/express/database/schema.sql'
-    pattern = load_pattern(pattern_path)
-    
+    pattern      = load_pattern(pattern_path)
     if not pattern:
-        print(f"⚠️  Pattern not found: {pattern_path}")
-        return None
-    
-    print(f"📋 Pattern: {pattern_path}")
-    
-    # Get output path from pattern metadata
-    metadata = get_pattern_metadata(pattern_path)
-    output_dir = metadata['output_dir'] if metadata else 'output'
+        print(f"Warning: Pattern not found: {pattern_path}")
+        return
+
+    print(f"Pattern: {pattern_path}")
+
+    metadata    = get_pattern_metadata(pattern_path)
+    output_dir  = metadata['output_dir'] if metadata else 'output'
     file_naming = metadata['file_naming'] if metadata else 'schema.sql'
     output_file = Path('output') / output_dir / file_naming
     output_file.parent.mkdir(parents=True, exist_ok=True)
-    
-    print(f"🔨 Generating schema for: {', '.join([r['name'] for r in resources])}...")
-    
-    # Generate schema for each resource
-    all_schemas = []
-    schema_explanations = {}  # Store AI's reasoning
-    
+
+    resource_names = [r['name'] for r in resources]
+    print(f"Generating schema for: {', '.join(resource_names)}...")
+
+    all_schemas         = []
+    schema_explanations = {}
+
     for resource_data in resources:
         resource_name = resource_data['name']
-        
-        prompt = f"""Generate a PostgreSQL CREATE TABLE statement for: {resource_name}
+        user_columns  = schema_notes.get(resource_name, '')
+        fk_block      = _build_fk_guidance(defined_tables, resource_name)
 
-Think about what fields this resource would realistically need:
-- What are the core attributes? (e.g., products have name/price, users have email/username)
-- What relationships exist? (e.g., orders need customer_id, reviews need product_id)
-- What common operations happen? (e.g., products need stock tracking, users need roles)
+        prompt = f"""Generate a PostgreSQL CREATE TABLE statement for the '{resource_name}' table.
 
-CRITICAL: When adding foreign keys, ALWAYS use REFERENCES syntax:
-- category_id INTEGER REFERENCES categories(id)
-- customer_id INTEGER REFERENCES customers(id) ON DELETE CASCADE
-- brand_id INTEGER REFERENCES brands(id)
+=== REQUIRED COLUMNS (from user's prompt.md) ===
+{user_columns}
 
-Examples of well-designed tables with proper foreign keys:
-- products: name, description, price, stock_quantity, sku, image_url, category_id INTEGER REFERENCES categories(id)
-- orders: customer_id INTEGER REFERENCES customers(id), order_date, total, status
-- reviews: product_id INTEGER REFERENCES products(id), user_id INTEGER REFERENCES users(id), rating, comment
+These columns MUST be included. You may add other sensible columns for a {resource_name} table
+(e.g. timestamps, soft delete flags, status fields) but do not remove or rename any required columns.
 
-IMPORTANT: Every foreign key MUST include REFERENCES clause. 
-Example: category_id INTEGER REFERENCES categories(id)
-NOT just: category_id INTEGER
+=== TABLE NAME ===
+The table MUST be named exactly: {resource_name}
+Do not rename it or use a variation.
 
-Use these as inspiration. Design what makes sense for {resource_name}.
+=== FOREIGN KEY RULES ===
+{fk_block}
 
-ALWAYS include: id (PRIMARY KEY), created_at, updated_at, is_deleted, deleted_at
-Add appropriate indexes for foreign keys and frequently queried columns.
-Remove documentation comments.
+=== REQUIRED SYSTEM COLUMNS ===
+Always include these regardless of user columns:
+- id SERIAL PRIMARY KEY
+- created_at TIMESTAMP DEFAULT NOW()
+- updated_at TIMESTAMP
+- is_deleted BOOLEAN DEFAULT FALSE
+- deleted_at TIMESTAMP
 
-Output ONLY SQL code, then explain your field and relationship choices.
+=== PATTERN (for structure reference) ===
+{pattern}
+
+Add indexes for foreign keys and frequently queried columns.
+Remove all documentation comments from output.
+
+Output ONLY the SQL code, then explain your decisions.
 """
-        
+
         try:
-            response = ollama.generate(
-                model='llama3.1:8b',
-                prompt=prompt,
-                keep_alive=0
-            )
-            
+            response      = ollama.generate(model='llama3.1:8b', prompt=prompt, keep_alive=0)
             response_text = response['response']
-            
-            print(f"\n[DEBUG] Response length: {len(response_text)} chars")
-            print(f"[DEBUG] First 500 chars:\n{response_text[:500]}\n")
-            
-            code = extract_code_from_response(response_text)
-            explanation = extract_explanation_from_response(response_text)
-            
+            code          = extract_code_from_response(response_text)
+            explanation   = extract_explanation_from_response(response_text)
+
             if code:
                 all_schemas.append(f"-- Table: {resource_name}\n{code}")
-                print(f"  ✅ Generated table: {resource_name}")
-                
-                # Save explanation for notes
+                print(f"  Generated table: {resource_name}")
                 if explanation and explanation.strip():
                     schema_explanations[resource_name] = explanation.strip()
             else:
-                print(f"  ⚠️  No code found for {resource_name}")
-                
+                print(f"  Warning: No SQL found for {resource_name}")
+
         except Exception as e:
-            print(f"  ❌ Failed to generate {resource_name}: {e}")
-    
+            print(f"  Error: Failed to generate {resource_name}: {e}")
+
     if not all_schemas:
-        print("⚠️  No schemas generated")
-        return None
-    
-    # Combine all schemas into one file
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    final_schema = f"-- Generated: {timestamp}\n"
-    final_schema += f"-- Database schema for {len(resources)} table(s)\n\n"
-    final_schema += "\n\n".join(all_schemas)
-    
+        print("Warning: No schemas generated")
+        return
+
+    timestamp    = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    final_schema = (
+        f"-- Generated: {timestamp}\n"
+        f"-- Database schema for {len(resources)} table(s)\n\n"
+        + "\n\n".join(all_schemas)
+    )
+
+    write_schema(final_schema)
+
     output_file.write_text(final_schema, encoding='utf-8')
-    print(f"\n✅ Saved: {output_file}")
-    
-    # Save notes with AI's reasoning
-    notes_file = output_file.parent / "schema_notes.txt"
-    notes_content = f"Generated: {timestamp}\n\n"
-    notes_content += f"Tables: {', '.join([r['name'] for r in resources])}\n\n"
-    notes_content += "=== Schema Design Decisions ===\n\n"
-    
-    # Add each table's reasoning
-    for resource_data in resources:
-        resource_name = resource_data['name']
-        notes_content += f"## {resource_name.capitalize()}\n\n"
-        
-        if resource_name in schema_explanations:
-            notes_content += f"{schema_explanations[resource_name]}\n\n"
-        else:
-            notes_content += f"Generated standard CRUD table structure.\n\n"
-    
-    notes_content += "=== Description ===\n\n"
-    notes_content += f"Database schema with {len(resources)} table(s). Includes primary keys, indexes, and timestamp tracking."
-    
+    print(f"Mirrored to: {output_file}")
+
+    notes_file    = output_file.parent / "schema_notes.txt"
+    notes_content = (
+        f"Generated: {timestamp}\n\n"
+        f"Tables: {', '.join(resource_names)}\n\n"
+        f"=== Design Decisions ===\n\n"
+    )
+    for r in resources:
+        name = r['name']
+        notes_content += f"## {name.capitalize()}\n\n"
+        notes_content += schema_explanations.get(name, "Generated from prompt.md schema notes.\n") + "\n\n"
     notes_file.write_text(notes_content, encoding='utf-8')
-    print(f"✅ Saved notes: {notes_file}")
-    
-    print(f"✅ Schema generation complete")
+    print(f"Saved notes: {notes_file}")
+    print(f"Schema generation complete")
     print('='*60)
-    
-    return final_schema  # Return so routes can use it
+
+
+def _build_fk_guidance(defined_tables: list, current_table: str) -> str:
+    other_tables = [t for t in defined_tables if t != current_table]
+
+    if not other_tables:
+        return (
+            "This app has only one table. Do NOT add any foreign keys or "
+            "REFERENCES to tables that don't exist in this schema."
+        )
+
+    allowed = ', '.join(other_tables)
+    return (
+        f"You MAY add foreign keys, but ONLY referencing these tables "
+        f"which are defined in this app: {allowed}\n"
+        f"Do NOT reference any other tables (e.g. categories, customers, brands) "
+        f"unless they appear in the list above."
+    )

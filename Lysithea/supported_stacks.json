@@ -1,0 +1,46 @@
+{
+  "_comment": "Declares which language/framework combinations have pattern coverage. Add an entry here when a new stack's pattern library is complete.",
+  "supported": [
+    {
+      "language": "javascript",
+      "framework": "express",
+      "status": "complete",
+      "patterns": {
+        "routes":     "Patterns/Javascript/Express/Routes/",
+        "queries":    "Patterns/Javascript/Express/queries/",
+        "middleware": "Patterns/Javascript/Express/middleware/",
+        "database":   "Patterns/Javascript/Express/database/",
+        "seeds":      "Patterns/Javascript/Express/database/seeds/"
+      },
+      "notes": "Full CRUD support with JWT auth and PostgreSQL"
+    },
+    {
+      "language": "python",
+      "framework": "fastapi",
+      "status": "planned",
+      "patterns": {},
+      "notes": "Not yet implemented"
+    },
+    {
+      "language": "python",
+      "framework": "flask",
+      "status": "planned",
+      "patterns": {},
+      "notes": "Not yet implemented"
+    },
+    {
+      "language": "go",
+      "framework": "gin",
+      "status": "planned",
+      "patterns": {},
+      "notes": "Not yet implemented"
+    },
+    {
+      "language": "ruby",
+      "framework": "rails",
+      "status": "planned",
+      "patterns": {},
+      "notes": "Not yet implemented"
+    }
+  ]
+}
