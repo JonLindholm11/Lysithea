@@ -33,7 +33,6 @@
 const express = require("express");
 const router = express.Router();
 const { authenticateToken } = require("../middleware/auth");
-const db = require("../db/connection");
 
 /**
  * POST /users - Create a new user
@@ -65,13 +64,12 @@ const db = require("../db/connection");
  */
 router.post(
   "/users",
-  authenticateToken, // Middleware: Verify JWT token before proceeding
+  authenticateToken,
   async (req, res) => {
     try {
-      // Extract and validate required fields from request body
       const { email, username, password } = req.body;
 
-      // Validate required fields are present
+      // Validate required fields
       if (!email || !username || !password) {
         return res.status(400).json({
           error: "Missing required fields",
@@ -80,7 +78,7 @@ router.post(
         });
       }
 
-      // Validate email format (basic validation)
+      // Validate email format
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(email)) {
         return res.status(400).json({
@@ -89,7 +87,7 @@ router.post(
         });
       }
 
-      // Validate password length (minimum 8 characters)
+      // Validate password length
       if (password.length < 8) {
         return res.status(400).json({
           error: "Password must be at least 8 characters",
@@ -97,44 +95,34 @@ router.post(
         });
       }
 
-      // Check if user with email already exists
-      const existingUser = await db.query(
-        "SELECT id FROM users WHERE email = $1 OR username = $2",
-        [email, username]
-      );
-
-      if (existingUser.rows.length > 0) {
+      // Check for existing user (use query function instead of db.query)
+      const existingUser = await getUserByEmail(email);  //  Use query function
+      
+      if (existingUser) {
         return res.status(409).json({
-          error: "User with this email or username already exists",
+          error: "User with this email already exists",
           code: "DUPLICATE_USER",
         });
       }
 
-      // Insert new user into database using parameterized query
-      // $1, $2, $3 are parameterized (prevents SQL injection)
-      // Note: In production, password should be hashed with bcrypt
-      const result = await db.query(
-        "INSERT INTO users (email, username, password_hash, created_at) VALUES ($1, $2, $3, NOW()) RETURNING id, email, username, created_at",
-        [email, username, password] // In production: use bcrypt.hash(password, 10)
-      );
+      // Hash password before storing
+      const bcrypt = require('bcrypt');  //  Need bcrypt import at top of file!
+      const hashedPassword = await bcrypt.hash(password, 10);
 
-      const newUser = result.rows[0];
-
-      // Return created user with 201 status
-      // DO NOT return password or sensitive fields
-      res.status(201).json({
-        data: {
-          id: newUser.id,
-          email: newUser.email,
-          username: newUser.username,
-          created_at: newUser.created_at,
-        },
+      // Create user
+      const newUser = await createUser({
+        email,
+        username,
+        password_hash: hashedPassword
       });
+
+      // DON'T return password_hash to client!
+      delete newUser.password_hash;
+
+      res.status(201).json({ data: newUser });
     } catch (error) {
-      // Log full error server-side for debugging
       console.error("Error creating user:", error);
 
-      // Return generic error to client (don't expose internal details)
       res.status(500).json({
         error: "Failed to create user",
         code: "CREATE_USER_ERROR",

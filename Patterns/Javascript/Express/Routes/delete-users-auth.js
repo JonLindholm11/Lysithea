@@ -33,7 +33,6 @@
 const express = require("express");
 const router = express.Router();
 const { authenticateToken } = require("../middleware/auth");
-const db = require("../db/connection");
 
 /**
  * DELETE /users/:id - Delete a user
@@ -60,14 +59,12 @@ const db = require("../db/connection");
  */
 router.delete(
   "/users/:id",
-  authenticateToken, // Middleware: Verify JWT token before proceeding
+  authenticateToken,
   async (req, res) => {
     try {
-      // Extract and validate ID from URL parameters
       const { id } = req.params;
       const userId = parseInt(id);
 
-      // Validate ID is a valid number
       if (isNaN(userId)) {
         return res.status(400).json({
           error: "Invalid user ID format",
@@ -75,36 +72,10 @@ router.delete(
         });
       }
 
-      // Check if user exists before attempting to delete
-      const existingUser = await db.query(
-        "SELECT id FROM users WHERE id = $1",
-        [userId],
-      );
+      // Delete user (soft delete - handles existence check internally)
+      const deletedUser = await deleteUser(userId);  //  Use userId, returns deleted user
 
-      if (existingUser.rows.length === 0) {
-        return res.status(404).json({
-          error: "User not found",
-          code: "USER_NOT_FOUND",
-        });
-      }
-
-      // OPTION 1: Soft delete (recommended for data recovery)
-      // Sets is_deleted flag and deleted_at timestamp
-      const result = await db.query(
-        "UPDATE users SET is_deleted = true, deleted_at = NOW() WHERE id = $1 RETURNING id, deleted_at",
-        [userId],
-      );
-
-      // OPTION 2: Hard delete (permanent removal)
-      // Uncomment below and comment out above if you want hard delete
-      // const result = await db.query(
-      //   "DELETE FROM users WHERE id = $1 RETURNING id",
-      //   [userId]
-      // );
-
-      const deletedUser = result.rows[0];
-
-      // Return success confirmation
+      // Return success
       res.status(200).json({
         message: "User deleted successfully",
         data: {
@@ -113,10 +84,16 @@ router.delete(
         },
       });
     } catch (error) {
-      // Log full error server-side for debugging
+      // Check if error is "User not found"
+      if (error.message === "User not found") {
+        return res.status(404).json({
+          error: "User not found",
+          code: "USER_NOT_FOUND",
+        });
+      }
+
       console.error("Error deleting user:", error);
 
-      // Return generic error to client (don't expose internal details)
       res.status(500).json({
         error: "Failed to delete user",
         code: "DELETE_USER_ERROR",

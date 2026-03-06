@@ -36,7 +36,6 @@
 const express = require("express");
 const router = express.Router();
 const { authenticateToken } = require("../middleware/auth");
-const db = require("../db/connection");
 
 /**
  * PUT /users/:id - Update an existing user
@@ -72,14 +71,12 @@ const db = require("../db/connection");
  */
 router.put(
   "/users/:id",
-  authenticateToken, // Middleware: Verify JWT token before proceeding
+  authenticateToken,
   async (req, res) => {
     try {
-      // Extract and validate ID from URL parameters
       const { id } = req.params;
       const userId = parseInt(id);
 
-      // Validate ID is a valid number
       if (isNaN(userId)) {
         return res.status(400).json({
           error: "Invalid user ID format",
@@ -87,10 +84,9 @@ router.put(
         });
       }
 
-      // Extract fields from request body
       const { email, username } = req.body;
 
-      // Validate at least one field is provided for update
+      // Validate at least one field provided
       if (!email && !username) {
         return res.status(400).json({
           error: "At least one field required for update",
@@ -110,76 +106,40 @@ router.put(
         }
       }
 
-      // Check if user exists
-      const existingUser = await db.query(
-        "SELECT id FROM users WHERE id = $1",
-        [userId]
-      );
 
-      if (existingUser.rows.length === 0) {
+      // Check if user exists
+      const existingUser = await getUserById(userId);
+      
+      if (!existingUser) {
         return res.status(404).json({
           error: "User not found",
           code: "USER_NOT_FOUND",
         });
       }
 
-      // Check if email/username is already taken by another user
-      if (email || username) {
-        const duplicateCheck = await db.query(
-          "SELECT id FROM users WHERE (email = $1 OR username = $2) AND id != $3",
-          [email || "", username || "", userId]
-        );
-
-        if (duplicateCheck.rows.length > 0) {
+      // Check for duplicate email (if changing email)
+      if (email && email !== existingUser.email) {
+        const duplicate = await getUserByEmail(email);
+        if (duplicate && duplicate.id !== userId) {
           return res.status(409).json({
-            error: "Email or username already taken",
-            code: "DUPLICATE_USER",
+            error: "Email already taken",
+            code: "DUPLICATE_EMAIL",
           });
         }
       }
 
-      // Build dynamic UPDATE query based on provided fields
-      const updates = [];
-      const values = [];
-      let paramCount = 1;
+      // Update user
+      const updatedUser = await updateUser(userId, { email, username });
 
-      if (email) {
-        updates.push(`email = $${paramCount}`);
-        values.push(email);
-        paramCount++;
-      }
+      // Don't return password_hash
+      delete updatedUser.password_hash;
 
-      if (username) {
-        updates.push(`username = $${paramCount}`);
-        values.push(username);
-        paramCount++;
-      }
-
-      // Add updated_at timestamp
-      updates.push(`updated_at = NOW()`);
-
-      // Add user ID as final parameter
-      values.push(userId);
-
-      // Execute update query
-      // $1, $2, etc. are parameterized (prevents SQL injection)
-      const result = await db.query(
-        `UPDATE users SET ${updates.join(", ")} WHERE id = $${paramCount} RETURNING id, email, username, created_at, updated_at`,
-        values
-      );
-
-      const updatedUser = result.rows[0];
-
-      // Return updated user with 200 status
-      // DO NOT return password or sensitive fields
       res.status(200).json({
         data: updatedUser,
       });
     } catch (error) {
-      // Log full error server-side for debugging
       console.error("Error updating user:", error);
 
-      // Return generic error to client (don't expose internal details)
       res.status(500).json({
         error: "Failed to update user",
         code: "UPDATE_USER_ERROR",

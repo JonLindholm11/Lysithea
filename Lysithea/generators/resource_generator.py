@@ -12,12 +12,20 @@ from pattern_manager import load_pattern, map_operation_to_pattern, get_pattern_
 from parsers import extract_code_from_response, extract_explanation_from_response
 from file_manager import save_generated_files, extract_table_from_schema
 
-def execute_sequential_generation(resource, schema=None):
+def execute_sequential_generation(resource, operations=None, stack_config=None, schema=None):
     """Execute sequential code generation based on query functions"""
     
     print(f"\n{'='*60}")
     print(f"  SEQUENTIAL GENERATION: {resource}")
     print('='*60)
+
+    # Bug 1 fix: pull language/framework from correct stack_config path
+    stack = (stack_config or {}).get('stack', {})
+    backend = stack.get('backend', {})
+    language = backend.get('language', 'javascript').lower()
+    framework = backend.get('framework', 'express').lower()
+
+    operations = operations or []
     
     # Calculate output path
     output_dir = 'api/routes'
@@ -55,7 +63,6 @@ def execute_sequential_generation(resource, schema=None):
         f"{import_line}\n"
     )
     
-    # Write boilerplate to file (module.exports will be appended later)
     output_file.write_text(boilerplate, encoding='utf-8')
     
     # Initialize notes file if schema is provided
@@ -84,21 +91,23 @@ def execute_sequential_generation(resource, schema=None):
         print(f"Using query function: {route_info['func']}")
         print('─'*60)
         
-        # Map HTTP method to pattern
+        # Bug 2 fix: build pattern path from language/framework, not hardcoded to users
         method_lower = route_info['method'].lower()
         if method_lower == 'get' and ':id' in route_info['path']:
-            pattern_path = 'javascript/express/routes/get-users-by-id-auth.js'
+            pattern_key = 'get-by-id-auth'
         elif method_lower == 'get':
-            pattern_path = 'javascript/express/routes/get-users-auth.js'
+            pattern_key = 'get-all-auth'
         elif method_lower == 'post':
-            pattern_path = 'javascript/express/routes/post-users-auth.js'
+            pattern_key = 'post-auth'
         elif method_lower == 'put':
-            pattern_path = 'javascript/express/routes/put-users-auth.js'
+            pattern_key = 'put-auth'
         elif method_lower == 'delete':
-            pattern_path = 'javascript/express/routes/delete-users-auth.js'
+            pattern_key = 'delete-auth'
         else:
             print(f"⚠️  No pattern for {method_lower}, skipping")
             continue
+
+        pattern_path = f"{language}/{framework}/routes/{pattern_key}.js"
         
         # Load the pattern
         pattern = load_pattern(pattern_path)
@@ -196,7 +205,22 @@ Generate ONLY the router.{method_lower}(...) code block. Nothing else. No import
 
 def map_query_to_route(func_name, resource):
     """Map query function name to route details"""
-    if resource.endswith('s'):
+
+    # Bug 3 fix: handle common irregular plurals before naive slice
+    irregular = {
+        'categories': 'category',
+        'statuses': 'status',
+        'addresses': 'address',
+        'aliases': 'alias',
+        'matrices': 'matrix',
+        'indices': 'index',
+    }
+
+    if resource in irregular:
+        resource_singular = irregular[resource]
+    elif resource.endswith('ies'):
+        resource_singular = resource[:-3] + 'y'
+    elif resource.endswith('s'):
         resource_singular = resource[:-1]
     else:
         resource_singular = resource

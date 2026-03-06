@@ -32,7 +32,6 @@
 const express = require("express");
 const router = express.Router();
 const { authenticateToken } = require("../middleware/auth");
-const db = require("../db/connection");
 
 /**
  * GET /users - Fetch all users with pagination
@@ -64,50 +63,33 @@ const db = require("../db/connection");
  */
 router.get(
   "/users",
-  authenticateToken, // Middleware: Verify JWT token before proceeding
+  authenticateToken,
   async (req, res) => {
     try {
-      // Extract and validate pagination parameters from query string
+      // Extract and validate pagination parameters
       const page = parseInt(req.query.page) || 1;
-
-      // Cap limit at 100 to prevent performance issues
       const limit = Math.min(parseInt(req.query.limit) || 20, 100);
-
-      // Calculate offset for SQL query
       const offset = (page - 1) * limit;
 
-      // Fetch users from database using parameterized query
-      // SELECT only non-sensitive fields (NO password_hash, reset_tokens, etc.)
-      // $1, $2 are parameterized (prevents SQL injection)
-      const users = await db.query(
-        "SELECT id, email, username, created_at FROM users ORDER BY created_at DESC LIMIT $1 OFFSET $2",
-        [limit, offset],
-      );
 
-      // Get total count of users for pagination metadata
-      const countResult = await db.query("SELECT COUNT(*) as total FROM users");
-      const total = parseInt(countResult.rows[0].total);
+      const { users, total } = await getUsers(page, limit);  //  Destructure
 
-      // Calculate total pages
       const totalPages = Math.ceil(total / limit);
 
-      // Return data with comprehensive pagination info
       res.status(200).json({
-        data: users.rows,
+        data: users,  //  Clean!
         pagination: {
-          page: page,
-          limit: limit,
-          total: total,
-          totalPages: totalPages,
+          page,
+          limit,
+          total,
+          totalPages,
           hasNext: page < totalPages,
           hasPrev: page > 1,
         },
       });
     } catch (error) {
-      // Log full error server-side for debugging
       console.error("Error fetching users:", error);
 
-      // Return generic error to client (don't expose internal details)
       res.status(500).json({
         error: "Failed to fetch users",
         code: "FETCH_USERS_ERROR",

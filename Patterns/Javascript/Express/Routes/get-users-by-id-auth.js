@@ -32,7 +32,6 @@
 const express = require("express");
 const router = express.Router();
 const { authenticateToken } = require("../middleware/auth");
-const db = require("../db/connection");
 
 /**
  * GET /users/:id - Fetch single user by ID
@@ -60,14 +59,12 @@ const db = require("../db/connection");
  */
 router.get(
   "/users/:id",
-  authenticateToken, // Middleware: Verify JWT token before proceeding
+  authenticateToken,
   async (req, res) => {
     try {
-      // Extract and validate ID from URL parameters
       const { id } = req.params;
       const userId = parseInt(id);
 
-      // Validate ID is a valid number
       if (isNaN(userId)) {
         return res.status(400).json({
           error: "Invalid user ID format",
@@ -75,33 +72,24 @@ router.get(
         });
       }
 
-      // Fetch user from database using parameterized query
-      // SELECT only non-sensitive fields (NO password_hash, reset_tokens, etc.)
-      // $1 is parameterized (prevents SQL injection)
-      const result = await db.query(
-        "SELECT id, email, username, created_at FROM users WHERE id = $1",
-        [userId]
-      );
+
+      const user = await getUserById(userId);  //  Use userId, not id
 
       // Check if user was found
-      if (result.rows.length === 0) {
+      if (!user) {  //  Changed from result.rows check
         return res.status(404).json({
           error: "User not found",
           code: "USER_NOT_FOUND",
         });
       }
 
-      const user = result.rows[0];
-
       // Return user data
       res.status(200).json({
         data: user,
       });
     } catch (error) {
-      // Log full error server-side for debugging
       console.error("Error fetching user:", error);
 
-      // Return generic error to client (don't expose internal details)
       res.status(500).json({
         error: "Failed to fetch user",
         code: "FETCH_USER_ERROR",
