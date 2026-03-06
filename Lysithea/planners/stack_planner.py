@@ -1,42 +1,54 @@
 # lysithea/planners/stack_planner.py
 """
 Stack & Requirements Planner
-- Reads prompt.md
-- Extracts stack, API, frontend, database, and extra notes
-- Produces a structured dict for all generators
+
+Reads prompt.md, extracts stack/API/frontend/database config,
+and writes the result to .lysithea/stack.json via file_manager.
+
+This is LAW FILE #2 — all generators depend on its output.
 """
 
-import json
-from pathlib import Path
-from read_prompt import read_prompt_md  # reusing your existing prompt parser
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-OUTPUT_FILE = Path('.lysithea/stack.json')
-OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
+import json
+from read_prompt import read_prompt_md
+from file_manager import write_stack
+
 
 def plan_stack_from_prompt(prompt_file='prompt.md'):
+    """
+    Read prompt.md, build stack config dict,
+    and persist it as law via file_manager.write_stack().
+
+    Returns:
+        stack_config dict or None on failure.
+    """
     prompt_data = read_prompt_md(prompt_file)
     if not prompt_data:
-        print("[Error] Could not read prompt.md")
+        print("[stack_planner] ❌ Could not read prompt.md")
         return None
 
-    # Build stack/config dict
     stack_config = {
-        "stack": prompt_data.get("stack", {}),
-        "api_requirements": prompt_data.get("api_requirements", {}),
+        "stack":                 prompt_data.get("stack", {}),
+        "api_requirements":      prompt_data.get("api_requirements", {}),
         "frontend_requirements": prompt_data.get("frontend_requirements", {}),
-        "database_schema": prompt_data.get("database_schema", {}),
-        "extra_notes": prompt_data.get("extra_notes", "")
+        "database_schema":       prompt_data.get("database_schema", {}),
+        "extra_notes":           prompt_data.get("extra_notes", ""),
     }
 
-    # Save to stack.json
-    with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
-        json.dump(stack_config, f, indent=2)
+    # ── Write law file ──────────────────────────────────────────────
+    write_stack(stack_config)
+    # ───────────────────────────────────────────────────────────────
 
-    print(f"[Stack Planner] Stack/config extracted.")
-    print(f"  Frontend: {stack_config['stack'].get('frontend')}")
-    print(f"  Backend: {stack_config['stack'].get('backend')}")
-    print(f"  Database: {stack_config['stack'].get('database')}")
+    print("[stack_planner] Stack config extracted:")
+    print(f"  Frontend:  {stack_config['stack'].get('frontend')}")
+    print(f"  Backend:   {stack_config['stack'].get('backend')}")
+    print(f"  Database:  {stack_config['stack'].get('database')}")
+
     return stack_config
+
 
 if __name__ == "__main__":
     plan_stack_from_prompt('prompt.md')

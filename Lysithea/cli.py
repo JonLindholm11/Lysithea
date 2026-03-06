@@ -4,34 +4,43 @@ Main CLI entry point for Lysithea code generator
 """
 
 from coordinator import coordinator_agent
-from generators import execute_sequential_generation, generate_middleware, generate_database, generate_schema, generate_seeds, generate_queries
+from planners.stack_planner import plan_stack_from_prompt
+from generators import (
+    execute_sequential_generation,
+    generate_middleware,
+    generate_database,
+    generate_schema,
+    generate_seeds,
+    generate_queries,
+)
 from pattern_manager import list_available_patterns
-from file_manager import extract_table_from_schema
+from file_manager import law_status, load_resources, extract_table_from_schema
+
 
 def main():
-    print("Lysithea v0.2.0 - Sequential Pattern Generation")
+    print("Lysithea v0.3.0 - Rule of Law Pattern Generation")
     print("\nCommands:")
     print("  /pattern   - Toggle pattern mode ON/OFF")
     print("  /list      - List available patterns")
-    print("  /status    - Show current mode")
+    print("  /status    - Show current mode + law file status")
     print("  quit       - Exit")
     print("-" * 50)
-    
+
     use_pattern = False
-    
+
     while True:
-        mode = "[PATTERN]" if use_pattern else "[BASELINE]"
+        mode       = "[PATTERN]" if use_pattern else "[BASELINE]"
         user_input = input(f"\n{mode} > ")
-        
+
         if user_input.lower() in ['quit', 'exit', 'q']:
             print("Goodbye!")
             break
-        
+
         if user_input.lower() == '/pattern':
             use_pattern = not use_pattern
             print(f"Pattern mode: {'ON' if use_pattern else 'OFF'}")
             continue
-        
+
         if user_input.lower() == '/list':
             patterns = list_available_patterns()
             if patterns:
@@ -41,62 +50,62 @@ def main():
             else:
                 print("No patterns found")
             continue
-        
+
         if user_input.lower() == '/status':
-            print(f"Pattern mode: {'ON' if use_pattern else 'OFF'}")
+            print(f"\nPattern mode: {'ON' if use_pattern else 'OFF'}")
+            status = law_status()
+            print("\n.lysithea/ law files:")
+            for name, present in status.items():
+                icon = "✅" if present else "❌"
+                print(f"  {icon}  {name}")
             continue
-            
+
         try:
             response = get_response(user_input, use_pattern)
             print(f"\n{response}\n")
+        except RuntimeError as e:
+            # Rule of Law violations surface here with clear messages
+            print(str(e))
         except Exception as e:
             print(f"Error: {e}")
             print("Make sure Ollama is running")
 
-def get_response(user_input, use_pattern=False):
-    """Get response from Ollama with optional pattern coordination"""
-    
-    if use_pattern:
-        # Use coordinator agent to break down request
-        result = coordinator_agent(user_input)
-        
-        if result:
-            resources = result.get('resources', [])
-            middleware = result.get('middleware', [])
-            database = result.get('database', [])
-            schema = result.get('schema', [])
-            
-            # Generate schema FIRST
-            full_schema = None
-            if schema:
-                full_schema = generate_schema(resources)
 
-            # Generate seeds (needs schema to know columns)
-            if full_schema:
-                generate_seeds(resources, full_schema)
-                generate_queries(resources, full_schema)
-            
-            # Generate database connection
-            for db_item in database:
-                generate_database(db_item)
-            
-            # Generate middleware
-            for middleware_name in middleware:
-                generate_middleware(middleware_name)
-            
-            # Generate resources LAST (can reference schema and queries)
+def get_response(user_input, use_pattern=False):
+    """Get response from Ollama with optional pattern coordination."""
+
+    if use_pattern:
+        result = coordinator_agent(user_input)  # writes functions.json
+        plan_stack_from_prompt()                # writes stack.json
+
+        if result:
+            resources  = result.get('resources', [])
+            middleware = result.get('middleware', [])
+            database   = result.get('database', [])
+            schema     = result.get('schema', [])
+
+            # Schema FIRST — writes .lysithea/schema.sql
+            if schema:
+                generate_schema()
+
+            # Seeds and queries — read schema from file_manager (hard fail if missing)
             for resource_data in resources:
                 resource_name = resource_data['name']
-                
-                # Extract just this resource's table from schema
-                table_schema = None
-                if full_schema:
-                    table_schema = extract_table_from_schema(full_schema, resource_name)
-                
-                # Generate routes based on query functions (no operations needed)
-                execute_sequential_generation(resource_name, schema=table_schema)
-            
-            # Build completion message
+                generate_seeds(resource_name)
+                generate_queries(resource_name)
+
+            # Database connection
+            for db_item in database:
+                generate_database(db_item)
+
+            # Middleware
+            for mw in middleware:
+                generate_middleware(mw)
+
+            # Routes — read schema + queries from file_manager
+            for resource_data in resources:
+                execute_sequential_generation(resource_data['name'])
+
             generated = []
             if schema:
                 generated.append(f"{len(schema)} schema")
@@ -106,30 +115,22 @@ def get_response(user_input, use_pattern=False):
                 generated.append(f"{len(middleware)} middleware")
             if database:
                 generated.append(f"{len(database)} database")
-            
+
             return f"\n✅ Generation complete: {', '.join(generated)}"
         else:
-            print("[Coordinator could not parse request - falling back to baseline]")
-    
-    # Baseline mode (no patterns)
+            print("[Coordinator could not parse request — falling back to baseline]")
+
+    # Baseline mode
     import ollama
-    
-    prompt = f"""You are a helpful coding assistant.
-
-USER REQUEST: {user_input}
-
-Generate the code and explain your decisions.
-"""
-    
     try:
         response = ollama.generate(
             model='llama3.1:8b',
-            prompt=prompt
+            prompt=f"You are a helpful coding assistant.\n\nUSER REQUEST: {user_input}\n\nGenerate the code and explain your decisions.",
         )
-        
         return response['response']
     except Exception as e:
         return f"Error generating response: {e}"
+
 
 if __name__ == "__main__":
     main()

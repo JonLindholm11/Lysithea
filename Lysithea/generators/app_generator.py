@@ -1,53 +1,63 @@
 # lysithea/generators/app_generator.py
+
+import sys as _sys, os as _os
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+
 """
 Sequential App.js generation
-- Fully stack-agnostic: picks patterns based on stack_config
+
+Rule of Law: reads stack config from file_manager.load_stack()
+             reads resources from file_manager.load_resources()
+             call generate_app_js() — no args.
 """
 
 from pathlib import Path
 from datetime import datetime
 from pattern_manager import load_pattern
+from file_manager import load_stack, load_resources, assert_planning_complete
 from file_manager import save_generated_files
 import re
 
-def generate_app_js(stack_config, resources):
-    """Generate main app.js file incrementally based on stack_config"""
 
-    output_dir = Path('output')
-    filename = 'app.js'
-    output_file = output_dir / filename
-    output_file.parent.mkdir(parents=True, exist_ok=True)
+def generate_app_js():
+    """
+    Generate main app.js file based on stack config and resources.
 
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    Reads stack from .lysithea/stack.json via file_manager.
+    Reads resources from .lysithea/functions.json via file_manager.
+    Hard fails if either planner has not run yet.
+    """
 
-    # Bug 3 fix: use .get() for safe key access
-    language = stack_config.get('backend', {}).get('language', '').lower()
-    framework = stack_config.get('backend', {}).get('framework', '').lower()
+    assert_planning_complete()     # Rule of Law guard
+    stack_config = load_stack()    # Rule of Law read
+    resources    = load_resources() # Rule of Law read
+
+    stack     = stack_config.get("stack", {})
+    language  = stack.get("backend", {}).get("language", "").lower()
+    framework = stack.get("backend", {}).get("framework", "").lower()
+
     pattern_path = f"patterns/{language}/{framework}/app-js-pattern.js"
-
-    pattern = load_pattern(pattern_path)
+    pattern      = load_pattern(pattern_path)
     if not pattern:
-        print(f"⚠️ Pattern not found: {pattern_path}")
+        print(f"⚠️  Pattern not found: {pattern_path}")
         return
 
-    # Bug 2 fix: strip JSDoc block comment header
     pattern = re.sub(r'/\*\*[\s\S]*?\*/', '', pattern).strip()
 
-    # Bug 4 fix: guard against None or invalid resources
-    resources = resources or []
-
-    # Dynamically generate imports and route usage based on resources
     imports = ""
-    routes = ""
-    for res in resources:
-        # Bug 5 fix: normalize resource name to lowercase
-        res = res.lower()
+    routes  = ""
+    for resource_data in resources:
+        res      = resource_data['name'].lower()
         imports += f"const {res}Router = require('./api/routes/{res}');\n"
-        routes += f"app.use('/{res}', {res}Router);\n"
+        routes  += f"app.use('/{res}', {res}Router);\n"
 
-    # Merge pattern with dynamic imports/routes
     content = pattern.replace('/* IMPORTS */', imports).replace('/* ROUTES */', routes)
 
-    # Bug 1 fix: convert Path to string for save_generated_files
-    save_generated_files(str(output_file), content, timestamp)
-    print(f"[App.js Generator] Generated {output_file}")
+    output_dir  = Path('output')
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_file = str(output_dir / 'app.js')
+    timestamp   = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    save_generated_files(output_file, content, timestamp)
+
+    print(f"[app_generator] ✅ Generated {output_file}")
