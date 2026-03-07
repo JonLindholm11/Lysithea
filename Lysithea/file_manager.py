@@ -7,10 +7,15 @@ All generators MUST read state through this module.
 No generator may receive resources/schema/stack as function arguments.
 
 Layout:
-  .lysithea/
-    functions.json   <- written by coordinator.py
-    stack.json       <- written by stack_planner.py
-    schema.sql       <- written by schema_generator.py
+  ../../{project_name}/          <- two levels up from Lysithea/
+    .lysithea/
+      functions.json             <- written by coordinator.py
+      stack.json                 <- written by stack_planner.py
+      schema.sql                 <- written by schema_generator.py
+    app.js
+    package.json
+    api/
+    db/
 """
 
 import re
@@ -18,44 +23,101 @@ import json
 from pathlib import Path
 from datetime import datetime
 
-# ─── Canonical state paths ────────────────────────────────────────────────────
-
-LAW_DIR               = Path('.lysithea')
-FUNCTIONS_FILE        = LAW_DIR / 'functions.json'
-STACK_FILE            = LAW_DIR / 'stack.json'
-SCHEMA_FILE           = LAW_DIR / 'schema.sql'
 SUPPORTED_STACKS_FILE = Path('supported_stacks.json')
+
+
+# ─── Project directory resolution ─────────────────────────────────────────────
+
+def get_project_name(prompt_file='prompt.md') -> str:
+    """
+    Read project name from prompt.md and convert to a safe folder name.
+
+    e.g. 'Book Store' -> 'book-store'
+
+    Falls back to 'my-app' if prompt.md is missing or has no project name.
+    """
+    path = Path(prompt_file)
+    if not path.exists():
+        return 'my-app'
+
+    found_heading = False
+    for line in path.read_text(encoding='utf-8').splitlines():
+        if re.match(r'^#\s+Project Name', line, re.IGNORECASE):
+            found_heading = True
+            continue
+        if found_heading:
+            stripped = line.strip()
+            if stripped and not stripped.startswith('#'):
+                return re.sub(r'[^\w\s-]', '', stripped).strip().lower().replace(' ', '-')
+
+    return 'my-app'
+
+
+def get_project_dir(prompt_file='prompt.md') -> Path:
+    """
+    Return the root output directory for the project.
+
+    Two levels up from Lysithea/ so it sits alongside it:
+      ../../{project_name}/
+    """
+    return Path(__file__).parent.parent.parent / get_project_name(prompt_file)
+
+
+def get_law_dir(prompt_file='prompt.md') -> Path:
+    """Return {project_dir}/.lysithea/"""
+    return get_project_dir(prompt_file) / '.lysithea'
+
+
+# ─── Dynamic path accessors ───────────────────────────────────────────────────
+# Using functions instead of module-level constants so paths are
+# always resolved from the current prompt.md at call time.
+
+def _project_dir() -> Path:
+    return get_project_dir()
+
+def _law_dir() -> Path:
+    return get_law_dir()
+
+def _functions_file() -> Path:
+    return _law_dir() / 'functions.json'
+
+def _stack_file() -> Path:
+    return _law_dir() / 'stack.json'
+
+def _schema_file() -> Path:
+    return _law_dir() / 'schema.sql'
+
 
 # ─── Bootstrap ────────────────────────────────────────────────────────────────
 
-def ensure_law_dir():
-    """Create .lysithea/ if it doesn't exist yet."""
-    LAW_DIR.mkdir(parents=True, exist_ok=True)
+def ensure_law_dir() -> None:
+    """Create project dir and .lysithea/ if they don't exist yet."""
+    _law_dir().mkdir(parents=True, exist_ok=True)
 
 
 # ─── Writers (called only by planners / schema_generator) ─────────────────────
 
 def write_functions(functions_dict: dict) -> None:
-    """Persist coordinator output to .lysithea/functions.json"""
+    """Persist coordinator output to {project}/.lysithea/functions.json"""
     ensure_law_dir()
-    with open(FUNCTIONS_FILE, 'w', encoding='utf-8') as f:
+    with open(_functions_file(), 'w', encoding='utf-8') as f:
         json.dump(functions_dict, f, indent=2)
-    print(f"[file_manager] ✅ Written: {FUNCTIONS_FILE}")
+    print(f"[file_manager] ✅ Written: {_functions_file()}")
 
 
 def write_stack(stack_config: dict) -> None:
-    """Persist stack_planner output to .lysithea/stack.json"""
+    """Persist stack_planner output to {project}/.lysithea/stack.json"""
     ensure_law_dir()
-    with open(STACK_FILE, 'w', encoding='utf-8') as f:
+    with open(_stack_file(), 'w', encoding='utf-8') as f:
         json.dump(stack_config, f, indent=2)
-    print(f"[file_manager] ✅ Written: {STACK_FILE}")
+    print(f"[file_manager] ✅ Written: {_stack_file()}")
 
 
 def write_schema(sql_content: str) -> None:
-    """Persist schema_generator output to .lysithea/schema.sql"""
+    """Persist schema_generator output to {project}/.lysithea/schema.sql"""
     ensure_law_dir()
-    SCHEMA_FILE.write_text(sql_content, encoding='utf-8')
-    print(f"[file_manager] ✅ Written: {SCHEMA_FILE}")
+    _schema_file().write_text(sql_content, encoding='utf-8')
+    print(f"[file_manager] ✅ Written: {_schema_file()}")
 
 
 # ─── Readers (called by all generators) ───────────────────────────────────────
@@ -63,68 +125,45 @@ def write_schema(sql_content: str) -> None:
 def load_functions() -> dict:
     """
     Load resources + operations from .lysithea/functions.json.
-
     Hard fails if coordinator has not run yet.
-
-    Returns:
-        {
-          "products": ["get all", "get by id", "post", "put", "delete"],
-          ...
-        }
     """
     _require_file(
-        FUNCTIONS_FILE,
+        _functions_file(),
         "coordinator.py has not run yet — execute coordinator first."
     )
-    with open(FUNCTIONS_FILE, 'r', encoding='utf-8') as f:
+    with open(_functions_file(), 'r', encoding='utf-8') as f:
         return json.load(f)
 
 
 def load_stack() -> dict:
     """
     Load stack config from .lysithea/stack.json.
-
     Hard fails if stack_planner has not run yet.
-
-    Returns:
-        {
-          "stack": { "backend": {...}, "frontend": {...}, "database": {...} },
-          "api_requirements": {...},
-          ...
-        }
     """
     _require_file(
-        STACK_FILE,
+        _stack_file(),
         "stack_planner.py has not run yet — execute stack_planner first."
     )
-    with open(STACK_FILE, 'r', encoding='utf-8') as f:
+    with open(_stack_file(), 'r', encoding='utf-8') as f:
         return json.load(f)
 
 
 def load_schema() -> str:
     """
     Load raw SQL schema from .lysithea/schema.sql.
-
     Hard fails if schema_generator has not run yet.
-
-    Returns:
-        Full SQL string.
     """
     _require_file(
-        SCHEMA_FILE,
+        _schema_file(),
         "schema_generator has not run yet — generate schema first."
     )
-    return SCHEMA_FILE.read_text(encoding='utf-8')
+    return _schema_file().read_text(encoding='utf-8')
 
 
 def load_resources() -> list:
     """
     Convenience: return resources as a list of dicts expected by generators.
-
     Derived from functions.json — no separate file needed.
-
-    Returns:
-        [{'name': 'products', 'operations': ['get all', ...]}, ...]
     """
     functions = load_functions()
     return [
@@ -136,14 +175,7 @@ def load_resources() -> list:
 def extract_table_from_schema(table_name: str) -> str | None:
     """
     Extract a single CREATE TABLE block from .lysithea/schema.sql.
-
     Hard fails if schema has not been generated.
-
-    Args:
-        table_name: e.g. 'products'
-
-    Returns:
-        'CREATE TABLE products (...);' string, or None if table not found.
     """
     schema_content = load_schema()
     pattern = rf'CREATE TABLE (?:IF NOT EXISTS )?{table_name}\s*\((.*?)\);'
@@ -153,37 +185,53 @@ def extract_table_from_schema(table_name: str) -> str | None:
     return None
 
 
-# ─── Status helpers ────────────────────────────────────────────────────────────
+# ─── Output path helper ───────────────────────────────────────────────────────
+
+def get_output_path(*parts) -> Path:
+    """
+    Build a path inside the project backend directory and ensure it exists.
+
+    Everything goes under backend/ — app.js, package.json, api/, db/ etc.
+    The frontend will have its own sibling frontend/ directory later.
+
+    Usage:
+        get_output_path('.')            ->  ../../book-store/backend/
+        get_output_path('api/routes')   ->  ../../book-store/backend/api/routes/
+        get_output_path('db', 'queries')->  ../../book-store/backend/db/queries/
+    """
+    # Flatten any slash-separated strings and filter out empty segments and '.'
+    flat = []
+    for p in parts:
+        flat.extend(str(p).split('/'))
+    flat = [p for p in flat if p and p != '.']
+
+    if flat:
+        path = _project_dir() / 'backend' / Path(*flat)
+    else:
+        path = _project_dir() / 'backend'
+
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+# ─── Status helpers ───────────────────────────────────────────────────────────
 
 def law_status() -> dict:
-    """
-    Return which law files are present.
-    Useful for CLI /status command and orchestrator pre-flight checks.
-
-    Returns:
-        {
-          'functions': True/False,
-          'stack':     True/False,
-          'schema':    True/False,
-        }
-    """
+    """Return which law files are present."""
     return {
-        'functions': FUNCTIONS_FILE.exists(),
-        'stack':     STACK_FILE.exists(),
-        'schema':    SCHEMA_FILE.exists(),
+        'functions': _functions_file().exists(),
+        'stack':     _stack_file().exists(),
+        'schema':    _schema_file().exists(),
     }
 
 
 def assert_planning_complete() -> None:
-    """
-    Hard fail if either coordinator or stack_planner have not run.
-    Call this at the top of orchestrator.py before any generator is invoked.
-    """
+    """Hard fail if either coordinator or stack_planner have not run."""
     missing = []
-    if not FUNCTIONS_FILE.exists():
-        missing.append(f"  • {FUNCTIONS_FILE}  (run coordinator.py)")
-    if not STACK_FILE.exists():
-        missing.append(f"  • {STACK_FILE}  (run stack_planner.py)")
+    if not _functions_file().exists():
+        missing.append(f"  • {_functions_file()}  (run coordinator.py)")
+    if not _stack_file().exists():
+        missing.append(f"  • {_stack_file()}  (run stack_planner.py)")
 
     if missing:
         raise RuntimeError(
@@ -194,14 +242,10 @@ def assert_planning_complete() -> None:
 
 
 def assert_schema_ready() -> None:
-    """
-    Hard fail if schema has not been generated.
-    Call this at the top of any generator that depends on schema
-    (seeds, queries, routes).
-    """
-    if not SCHEMA_FILE.exists():
+    """Hard fail if schema has not been generated."""
+    if not _schema_file().exists():
         raise RuntimeError(
-            f"\n[file_manager] ❌ Rule of Law violated — {SCHEMA_FILE} not found.\n"
+            f"\n[file_manager] ❌ Rule of Law violated — {_schema_file()} not found.\n"
             "Run schema_generator before invoking seed/query/route generators."
         )
 
@@ -210,13 +254,9 @@ def assert_stack_supported() -> None:
     """
     Hard fail if the stack declared in stack.json is not listed as 'complete'
     in supported_stacks.json.
-
-    Call this in orchestrator.py after assert_planning_complete().
-    Gives a clear error pointing to the roadmap instead of silent
-    pattern-not-found failures deep inside generators.
     """
     if not SUPPORTED_STACKS_FILE.exists():
-        return  # No registry file — skip check
+        return
 
     stack     = load_stack()
     backend   = stack.get('stack', {}).get('backend', {})
@@ -255,35 +295,15 @@ def assert_stack_supported() -> None:
         )
 
 
-# ─── Output file helpers (unchanged behaviour) ────────────────────────────────
+# ─── Output file helpers ──────────────────────────────────────────────────────
 
-def save_generated_files(code, explanation, resource_name="generated", append_notes=False):
-    """Save generated code and notes to output/"""
-
-    output_dir = Path('output')
-    output_dir.mkdir(exist_ok=True)
-
-    code_path  = output_dir / f"{resource_name}.js"
-    notes_path = output_dir / f"{resource_name}_notes.txt"
-    timestamp  = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
-    code_path.write_text(f"// Generated: {timestamp}\n\n{code}", encoding='utf-8')
-    print(f"✅ Saved code: {code_path}")
-
-    if append_notes and notes_path.exists():
-        existing = notes_path.read_text(encoding='utf-8')
-        notes_path.write_text(
-            existing + f"\n\n{'='*60}\nAdded: {timestamp}\n\n=== Explanation ===\n\n{explanation}",
-            encoding='utf-8'
-        )
-    else:
-        notes_path.write_text(
-            f"Generated: {timestamp}\n\nResource: {resource_name}\n\n=== Explanation ===\n\n{explanation}",
-            encoding='utf-8'
-        )
-    print(f"✅ Saved notes: {notes_path}")
-
-    return code_path, notes_path
+def save_generated_files(output_file, code, timestamp, append_notes=False):
+    """Save generated code to the given output_file path."""
+    path = Path(output_file)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"// Generated: {timestamp}\n\n{code}", encoding='utf-8')
+    print(f"✅ Saved: {path}")
+    return path
 
 
 # ─── Internal ─────────────────────────────────────────────────────────────────

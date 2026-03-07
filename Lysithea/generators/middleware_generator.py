@@ -15,9 +15,9 @@ import ollama
 from pathlib import Path
 from datetime import datetime
 
-from pattern_manager import load_pattern, get_pattern_metadata, map_middleware_pattern, get_stack_info
+from pattern_manager import load_pattern, get_pattern_metadata, extract_metadata_from_content, map_middleware_pattern, get_stack_info
 from parsers import extract_code_from_response, extract_explanation_from_response
-from file_manager import assert_planning_complete
+from file_manager import get_output_path,  assert_planning_complete
 
 
 def generate_middleware(middleware_name: str):
@@ -53,11 +53,10 @@ def generate_middleware(middleware_name: str):
 
     print(f"📋 Pattern: {pattern_path}")
 
-    metadata    = get_pattern_metadata(pattern_path)
+    metadata = extract_metadata_from_content(pattern)
     output_dir  = metadata['output_dir'] if metadata else 'api/middleware'
     file_naming = metadata['file_naming'] if metadata else f'{middleware_name}.{_ext(stack)}'
-    output_file = Path('output') / output_dir / file_naming
-    output_file.parent.mkdir(parents=True, exist_ok=True)
+    output_file = get_output_path(*output_dir.split('/')) / file_naming
 
     print(f"🔨 Generating {middleware_name} middleware...")
 

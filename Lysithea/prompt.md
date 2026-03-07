@@ -8,6 +8,7 @@ Database: PostgreSQL
 
 # Features
 - Books: crud
+- Users: crud
 
 # API Requirements
 - Security: JWT
@@ -16,12 +17,14 @@ Database: PostgreSQL
 - Rate limiting: false
 
 # Frontend Requirements
-- Pages: Dashboard, Books
+- Pages: Dashboard, Books, Login, Register
 
 # Database / Schema Notes
 - Tables:
-  - books: title, author, price, stock_quantity
+  - books: title, author, price, stock_quantity, reserved_by_user_id
+  - users: email, username, password_hash
 - Relationships:
+  - books has many users through reserved_by_user_id
 
 # Extra Notes
 - Use async/await throughout

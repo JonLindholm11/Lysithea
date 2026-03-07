@@ -15,9 +15,9 @@ import re
 from pathlib import Path
 from datetime import datetime
 
-from pattern_manager import load_pattern, get_pattern_metadata, map_query_pattern, get_stack_info
+from pattern_manager import load_pattern, get_pattern_metadata, extract_metadata_from_content, map_query_pattern, get_stack_info
 from parsers import extract_code_from_response, extract_explanation_from_response
-from file_manager import assert_schema_ready, extract_table_from_schema
+from file_manager import get_output_path,  assert_schema_ready, extract_table_from_schema
 
 
 def generate_queries(resource_name: str):
@@ -69,13 +69,11 @@ def execute_sequential_query_generation(resource: str, table_schema: str | None,
     print(f"  Query types: {len(query_types)}")
     print('='*60)
 
-    # Resolve output path from first pattern's metadata
-    metadata    = get_pattern_metadata('javascript/express/queries/create.js')
-    output_dir  = metadata['output_dir'] if metadata else 'output'
-    file_naming = metadata['file_naming'] if metadata else f'{resource}.queries.js'
-    filename    = file_naming.replace('{resource}', resource)
-    output_file = Path('output') / output_dir / filename
-    output_file.parent.mkdir(parents=True, exist_ok=True)
+    # Resolve output path — hardcoded since query patterns are consistent
+    output_dir  = 'db/queries'
+    filename    = f'{resource}.queries.js'
+    file_naming = filename
+    output_file = get_output_path(*output_dir.split('/')) / filename
 
     completed_functions = []
 

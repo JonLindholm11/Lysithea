@@ -17,7 +17,7 @@ from datetime import datetime
 
 from pattern_manager import load_pattern, map_operation_to_pattern, get_pattern_metadata, get_stack_info
 from parsers import extract_code_from_response, extract_explanation_from_response
-from file_manager import assert_schema_ready, extract_table_from_schema
+from file_manager import get_output_path,  assert_schema_ready, extract_table_from_schema
 
 
 def execute_sequential_generation(resource: str):
@@ -40,11 +40,10 @@ def execute_sequential_generation(resource: str):
     print('='*60)
 
     output_dir  = 'api/routes'
-    output_file = Path('output') / output_dir / f'{resource}.js'
-    output_file.parent.mkdir(parents=True, exist_ok=True)
+    output_file = get_output_path(*output_dir.split('/')) / f'{resource}.js'
 
     # Load query function names from generated file
-    query_file = Path('output') / 'db' / 'queries' / f'{resource}.queries.js'
+    query_file = get_output_path('db', 'queries') / f'{resource}.queries.js'
     all_query_functions = []
     if query_file.exists():
         try:

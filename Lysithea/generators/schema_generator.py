@@ -21,16 +21,17 @@ import ollama
 from pathlib import Path
 from datetime import datetime
 
-from pattern_manager import load_pattern, get_pattern_metadata
+from pattern_manager import load_pattern, get_pattern_metadata, extract_metadata_from_content
 from parsers import extract_code_from_response, extract_explanation_from_response
-from file_manager import load_resources, load_stack, write_schema
+from file_manager import get_output_path,  load_resources, load_stack, write_schema
 
 
 def generate_schema():
     resources    = load_resources()
     stack        = load_stack()
-    schema_notes = stack.get('database_schema', {}).get('tables', {})
+    schema_notes  = stack.get('database_schema', {}).get('tables', {})
     defined_tables = list(schema_notes.keys())
+    relationships  = stack.get('database_schema', {}).get('relationships', [])
 
     print(f"\n{'='*60}")
     print(f"  GENERATING SCHEMA: {len(resources)} table(s)")
@@ -56,11 +57,10 @@ def generate_schema():
 
     print(f"Pattern: {pattern_path}")
 
-    metadata    = get_pattern_metadata(pattern_path)
-    output_dir  = metadata['output_dir'] if metadata else 'output'
+    metadata = extract_metadata_from_content(pattern)
+    output_dir  = metadata['output_dir'] if metadata else 'db'
     file_naming = metadata['file_naming'] if metadata else 'schema.sql'
-    output_file = Path('output') / output_dir / file_naming
-    output_file.parent.mkdir(parents=True, exist_ok=True)
+    output_file = get_output_path(*output_dir.split('/')) / file_naming
 
     resource_names = [r['name'] for r in resources]
     print(f"Generating schema for: {', '.join(resource_names)}...")
@@ -71,38 +71,34 @@ def generate_schema():
     for resource_data in resources:
         resource_name = resource_data['name']
         user_columns  = schema_notes.get(resource_name, '')
-        fk_block      = _build_fk_guidance(defined_tables, resource_name)
+        fk_block      = _build_fk_guidance(defined_tables, resource_name, relationships)
 
-        prompt = f"""Generate a PostgreSQL CREATE TABLE statement for the '{resource_name}' table.
+        prompt = f"""Generate a PostgreSQL CREATE TABLE statement for ONLY the '{resource_name}' table.
 
-=== REQUIRED COLUMNS (from user's prompt.md) ===
+=== REQUIRED COLUMNS ===
 {user_columns}
 
-These columns MUST be included. You may add other sensible columns for a {resource_name} table
-(e.g. timestamps, soft delete flags, status fields) but do not remove or rename any required columns.
-
-=== TABLE NAME ===
-The table MUST be named exactly: {resource_name}
-Do not rename it or use a variation.
-
-=== FOREIGN KEY RULES ===
-{fk_block}
-
-=== REQUIRED SYSTEM COLUMNS ===
-Always include these regardless of user columns:
+=== SYSTEM COLUMNS (always include) ===
 - id SERIAL PRIMARY KEY
 - created_at TIMESTAMP DEFAULT NOW()
 - updated_at TIMESTAMP
 - is_deleted BOOLEAN DEFAULT FALSE
 - deleted_at TIMESTAMP
 
-=== PATTERN (for structure reference) ===
+=== FOREIGN KEY RULES ===
+{fk_block}
+
+=== STRICT RULES - FOLLOW EXACTLY ===
+1. Generate ONLY the {resource_name} table. Do NOT generate any other tables.
+2. Do NOT add columns that are not listed in REQUIRED COLUMNS or SYSTEM COLUMNS above.
+3. The table name MUST be exactly: {resource_name}
+4. Do NOT add CREATE TABLE for any other resource (e.g. books, users, orders).
+5. Output ONLY one CREATE TABLE block followed by CREATE INDEX statements.
+
+=== PATTERN (for structure reference only) ===
 {pattern}
 
-Add indexes for foreign keys and frequently queried columns.
-Remove all documentation comments from output.
-
-Output ONLY the SQL code, then explain your decisions.
+Output ONLY the SQL for the {resource_name} table, then briefly explain your decisions.
 """
 
         try:
@@ -154,19 +150,26 @@ Output ONLY the SQL code, then explain your decisions.
     print('='*60)
 
 
-def _build_fk_guidance(defined_tables: list, current_table: str) -> str:
-    other_tables = [t for t in defined_tables if t != current_table]
+def _build_fk_guidance(defined_tables: list, current_table: str, relationships: list) -> str:
+    """
+    Build FK guidance from explicitly defined relationships in prompt.md only.
+    If no relationships are defined, forbid all foreign keys.
+    """
+    # Find relationships that involve current_table
+    relevant = [r for r in relationships if current_table in r.lower()]
 
-    if not other_tables:
+    if not relevant:
         return (
-            "This app has only one table. Do NOT add any foreign keys or "
-            "REFERENCES to tables that don't exist in this schema."
+            f"CRITICAL: Do NOT add any foreign keys, REFERENCES, or extra columns "
+            f"that are not listed in the required columns above. "
+            f"No relationships were defined for the {current_table} table in prompt.md. "
+            f"Adding a user_id, book_id, or any other _id column is FORBIDDEN unless it "
+            f"appears explicitly in the required columns list above."
         )
 
-    allowed = ', '.join(other_tables)
+    allowed = ", ".join(relevant)
     return (
-        f"You MAY add foreign keys, but ONLY referencing these tables "
-        f"which are defined in this app: {allowed}\n"
-        f"Do NOT reference any other tables (e.g. categories, customers, brands) "
-        f"unless they appear in the list above."
+        f"The following relationships were explicitly defined in prompt.md:\n{allowed}\n"
+        f"ONLY add foreign keys for these exact relationships. "
+        f"Do NOT invent any other foreign keys or reference columns."
     )
