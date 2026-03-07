@@ -29,6 +29,7 @@ from generators.query_generator import generate_queries
 from generators.database_generator import generate_database
 from generators.middleware_generator import generate_middleware
 from generators.resource_generator import execute_sequential_generation
+from generators.frontend_generator import generate_frontend
 from generators.app_generator import generate_app_js
 from generators.manifest_generator import generate_manifest
 from generators.auth_generator import generate_auth
@@ -97,6 +98,10 @@ def orchestrate(prompt_file='prompt.md'):
     generate_env()
     generate_seeds_runner()
     generate_project_files()
+
+    # ── Step 6: Generate frontend ──────────────────────────────
+    print("\n[Orchestrator] Step 6/6 — Generating frontend...")
+    generate_frontend()
 
     print("\n[Orchestrator] ✅ Lysithea pipeline complete.")
 

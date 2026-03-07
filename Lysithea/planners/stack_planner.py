@@ -32,6 +32,7 @@ def plan_stack_from_prompt(prompt_file='prompt.md'):
 
     stack_config = {
         "project_name":          prompt_data.get("project_name", "my-app"),
+        "style":                 prompt_data.get("style", "corporate"),
         "stack":                 prompt_data.get("stack", {}),
         "api_requirements":      prompt_data.get("api_requirements", {}),
         "frontend_requirements": prompt_data.get("frontend_requirements", {}),

@@ -7,7 +7,7 @@
  * Retrieves a single record by a specific field value
  */
 
-const db = require('../../connection');
+const db = require('../connection');
 
 /**
  * Get user by email

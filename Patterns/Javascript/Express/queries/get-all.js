@@ -7,7 +7,7 @@
  * Retrieves all records from a table
  */
 
-const db = require('../../connection');
+const db = require('../connection');
 
 /**
  * Get all users with pagination

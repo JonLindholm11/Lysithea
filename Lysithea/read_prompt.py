@@ -55,6 +55,7 @@ def read_prompt_md(prompt_file='prompt.md') -> dict | None:
     return {
         'project_name':          _parse_project_name(sections),
         'stack':                 _parse_stack(sections),
+        'style':                 sections.get('style', 'corporate').strip() or 'corporate',
         'features':              _parse_features(sections),
         'api_requirements':      _parse_api_requirements(sections),
         'frontend_requirements': _parse_frontend_requirements(sections),

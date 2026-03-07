@@ -7,7 +7,7 @@
  * Retrieves records by a field value with related data via JOINs
  */
 
-const db = require('../../connection');
+const db = require('../connection');
 
 /**
  * Get orders by customer ID with details

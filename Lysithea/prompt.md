@@ -1,5 +1,5 @@
 # Project Name
-Book Store
+Blog
 
 # Stack
 Frontend: React 18 + Tailwind
@@ -7,8 +7,8 @@ Backend: Express.js + Node 20
 Database: PostgreSQL
 
 # Features
-- Books: crud
 - Users: crud
+- Posts: crud
 
 # API Requirements
 - Security: JWT
@@ -17,14 +17,15 @@ Database: PostgreSQL
 - Rate limiting: false
 
 # Frontend Requirements
-- Pages: Dashboard, Books, Login, Register
+- Pages: Dashboard, Posts
 
 # Database / Schema Notes
 - Tables:
-  - books: title, author, price, stock_quantity, reserved_by_user_id
   - users: email, username, password_hash
+  - posts: title, content, user_id
 - Relationships:
-  - books has many users through reserved_by_user_id
+  - posts has many users
 
 # Extra Notes
 - Use async/await throughout
+- Style: corporate

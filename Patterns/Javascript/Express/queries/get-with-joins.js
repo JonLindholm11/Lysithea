@@ -7,7 +7,7 @@
  * Retrieves records with related data via LEFT JOIN
  */
 
-const db = require('../../connection');
+const db = require('../connection');
 
 /**
  * Get orders with customer details

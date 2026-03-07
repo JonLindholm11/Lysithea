@@ -15,9 +15,9 @@ import re
 from pathlib import Path
 from datetime import datetime
 
-from pattern_manager import load_pattern, get_pattern_metadata, extract_metadata_from_content, map_query_pattern, get_stack_info
+from pattern_manager import load_pattern, get_pattern_metadata, map_query_pattern, get_stack_info
 from parsers import extract_code_from_response, extract_explanation_from_response
-from file_manager import get_output_path,  assert_schema_ready, extract_table_from_schema
+from file_manager import assert_schema_ready, extract_table_from_schema, get_output_path
 
 
 def generate_queries(resource_name: str):
@@ -31,12 +31,77 @@ def generate_queries(resource_name: str):
     Hard fails if schema has not been generated.
     """
 
-    assert_schema_ready()                                    # Rule of Law guard
-    table_schema = extract_table_from_schema(resource_name) # Rule of Law read
-    stack        = get_stack_info()                          # stack from file_manager
+    assert_schema_ready()
+    table_schema = extract_table_from_schema(resource_name)
+    stack        = get_stack_info()
 
     execute_sequential_query_generation(resource_name, table_schema, stack)
     print(f"\n✅ Query generation complete for {resource_name}")
+
+
+def _to_commonjs(code: str, resource_name: str) -> str:
+    """
+    Convert ES module exports to CommonJS.
+    - Remove 'export' keyword from async functions
+    - Collect all function names and append module.exports
+    """
+    # Remove 'export ' prefix from async functions
+    code = re.sub(r'\bexport\s+(async\s+function)', r'\1', code)
+
+    # Find all top-level async function names
+    func_names = re.findall(r'^async function (\w+)\s*\(', code, re.MULTILINE)
+
+    if func_names:
+        # Remove any existing module.exports
+        code = re.sub(r'\nmodule\.exports\s*=.*', '', code)
+        exports = ', '.join(func_names)
+        code = code.rstrip() + f'\n\nmodule.exports = {{ {exports} }};\n'
+
+    return code
+
+
+def _fix_singular_names(code: str, resource: str) -> str:
+    """
+    Fix LLM tendency to use plural names for single-record functions.
+    e.g. createBooks → createBook, updateBooks → updateBook, deleteBooks → deleteBook
+    """
+    # Derive singular form
+    irregular = {
+        'categories': 'category', 'statuses': 'status',
+        'addresses': 'address',   'aliases': 'alias',
+    }
+    if resource in irregular:
+        singular = irregular[resource]
+    elif resource.endswith('ies'):
+        singular = resource[:-3] + 'y'
+    elif resource.endswith('s'):
+        singular = resource[:-1]
+    else:
+        singular = resource
+
+    cap_resource = resource.capitalize()
+    cap_singular = singular.capitalize()
+
+    # createBooks → createBook, updateBooks → updateBook, deleteBooks → deleteBook
+    for verb in ('create', 'update', 'delete', 'getById', 'getBy'):
+        wrong = f'{verb}{cap_resource}'
+        right = f'{verb}{cap_singular}' if verb not in ('getById', 'getBy') else f'get{cap_singular}{verb[3:]}'
+        if wrong != right:
+            code = code.replace(wrong, right)
+
+    # Also fix getBookById patterns: get{Resource}ById → get{Singular}ById
+    wrong_get_by_id = f'get{cap_resource}ById'
+    right_get_by_id = f'get{cap_singular}ById'
+    if wrong_get_by_id != right_get_by_id:
+        code = code.replace(wrong_get_by_id, right_get_by_id)
+
+    return code
+
+
+def _fix_connection_path(code: str) -> str:
+    """Fix incorrect ../../connection path — queries live at db/queries/ so path should be ../connection"""
+    code = re.sub(r"require\(['\"]\.\.\/\.\.\/connection['\"]\)", "require('../connection')", code)
+    return code
 
 
 def execute_sequential_query_generation(resource: str, table_schema: str | None, stack: dict | None = None):
@@ -69,13 +134,26 @@ def execute_sequential_query_generation(resource: str, table_schema: str | None,
     print(f"  Query types: {len(query_types)}")
     print('='*60)
 
-    # Resolve output path — hardcoded since query patterns are consistent
-    output_dir  = 'db/queries'
-    filename    = f'{resource}.queries.js'
-    file_naming = filename
+    metadata    = get_pattern_metadata('javascript/express/queries/create.js')
+    output_dir  = metadata['output_dir'] if metadata else 'output'
+    file_naming = metadata['file_naming'] if metadata else f'{resource}.queries.js'
+    filename    = file_naming.replace('{resource}', resource)
     output_file = get_output_path(*output_dir.split('/')) / filename
+    output_file.parent.mkdir(parents=True, exist_ok=True)
 
     completed_functions = []
+
+    # Derive singular form for naming guidance
+    irregular = {'categories': 'category', 'statuses': 'status', 'addresses': 'address'}
+    if resource in irregular:
+        singular = irregular[resource]
+    elif resource.endswith('ies'):
+        singular = resource[:-3] + 'y'
+    elif resource.endswith('s'):
+        singular = resource[:-1]
+    else:
+        singular = resource
+    cap_singular = singular.capitalize()
 
     for i, query_type in enumerate(query_types):
         print(f"\n{'─'*60}")
@@ -106,6 +184,8 @@ def execute_sequential_query_generation(resource: str, table_schema: str | None,
             display_name=display_name,
             field_name=field_name,
             resource=resource,
+            singular=singular,
+            cap_singular=cap_singular,
             table_schema=table_schema,
             pattern=pattern,
             completed_functions=completed_functions,
@@ -121,12 +201,25 @@ def execute_sequential_query_generation(resource: str, table_schema: str | None,
                 print(f"⚠️  No code block found in response")
                 continue
 
+            # Post-process fixes
+            code = _fix_connection_path(code)
+            code = _fix_singular_names(code, resource)
+            code = _to_commonjs(code, resource)
+
             timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
             if completed_functions:
                 existing = output_file.read_text(encoding='utf-8')
+                # Remove module.exports from existing before appending
+                existing = re.sub(r'\nmodule\.exports\s*=.*\n?', '', existing)
                 existing = re.sub(r'^//\s*Generated:.*?\n', '', existing, flags=re.MULTILINE)
-                combined = existing.rstrip() + "\n\n" + code.strip()
+                # Strip module.exports from new code too before merging
+                new_code = re.sub(r'\nmodule\.exports\s*=.*\n?', '', code)
+                new_code = re.sub(r"const db = require\(['\"]\.\.\/connection['\"]\);\n?", '', new_code)
+                combined = existing.rstrip() + "\n\n" + new_code.strip()
+                # Re-collect ALL function names and write single module.exports
+                all_funcs = re.findall(r'^async function (\w+)\s*\(', combined, re.MULTILINE)
+                combined = combined.rstrip() + f'\n\nmodule.exports = {{ {", ".join(all_funcs)} }};\n'
                 output_file.write_text(f"// Generated: {timestamp}\n\n{combined}", encoding='utf-8')
             else:
                 output_file.write_text(f"// Generated: {timestamp}\n\n{code}", encoding='utf-8')
@@ -162,7 +255,8 @@ def execute_sequential_query_generation(resource: str, table_schema: str | None,
     print('='*60)
 
 
-def _build_prompt(query_type, display_name, field_name, resource, table_schema, pattern, completed_functions):
+def _build_prompt(query_type, display_name, field_name, resource, singular, cap_singular,
+                  table_schema, pattern, completed_functions):
     """Build the LLM prompt for a given query type."""
     existing_block = (
         f"EXISTING FUNCTIONS (do not modify):\n"
@@ -171,12 +265,26 @@ def _build_prompt(query_type, display_name, field_name, resource, table_schema, 
     )
     schema_block = f"TABLE SCHEMA:\n{table_schema}" if table_schema else ""
 
+    # Naming rules appended to every prompt
+    naming_rules = f"""
+CRITICAL NAMING RULES:
+- Single-record functions MUST use singular resource name: {singular}
+- create{cap_singular} (NOT create{resource.capitalize()})
+- get{cap_singular}s (list — plural OK here)
+- get{cap_singular}ById (singular)
+- update{cap_singular} (singular)
+- delete{cap_singular} (singular)
+- Use CommonJS: NO 'export' keyword. Use: async function name() {{}}
+- Connection import: const db = require('../connection');
+- Do NOT use ../../connection
+"""
+
     if query_type.startswith('get-by-field-with-join:') or query_type.startswith('get-by-field:'):
-        with_join    = 'with-join' in query_type
-        func_suffix  = 'WithDetails' if with_join else ''
-        title_field  = field_name.replace('_', ' ').title().replace(' ', '')
-        func_name    = f"get{resource.capitalize()}By{title_field}{func_suffix}"
-        sql_hint     = (
+        with_join   = 'with-join' in query_type
+        func_suffix = 'WithDetails' if with_join else ''
+        title_field = field_name.replace('_', ' ').title().replace(' ', '')
+        func_name   = f"get{cap_singular}By{title_field}{func_suffix}"
+        sql_hint    = (
             f"Build LEFT JOINs for all REFERENCES in schema. WHERE {field_name} = $1"
             if with_join else
             f"SELECT * FROM {resource} WHERE {field_name} = $1, return all matching rows"
@@ -184,7 +292,7 @@ def _build_prompt(query_type, display_name, field_name, resource, table_schema, 
 
         if completed_functions:
             return f"""{existing_block}\n\n{schema_block}\n\nPATTERN TO ADD:\n{pattern}
-
+{naming_rules}
 TASK: Add {display_name} function for {resource}.
 Function name: {func_name}
 Parameter: {field_name}
@@ -194,7 +302,7 @@ Generate ONLY the new function. No imports. Wrap in ```javascript fences.
 Then briefly explain."""
         else:
             return f"""{schema_block}\n\n=== PATTERN ===\n{pattern}
-
+{naming_rules}
 Generate {display_name} function for {resource}.
 Function name: {func_name}
 Parameter: {field_name}
@@ -205,7 +313,7 @@ Then explain."""
     else:
         if completed_functions:
             return f"""{existing_block}\n\n{schema_block}\n\nPATTERN TO ADD:\n{pattern}
-
+{naming_rules}
 TASK: Add the {query_type} function for {resource}.
 - Adapt from "users"/"orders" to "{resource}"
 - Use ONLY columns from the schema
@@ -215,10 +323,10 @@ TASK: Add the {query_type} function for {resource}.
 Wrap in ```javascript fences. Then explain briefly."""
         else:
             return f"""{schema_block}\n\n=== PATTERN ===\n{pattern}
-
+{naming_rules}
 Generate {query_type} function for {resource}.
-- Replace "user"/"users" with "{resource}"
+- Replace "user"/"users" with "{resource}" / "{singular}"
 - Use ONLY columns from the schema
-- Include db import: const db = require('../../connection');
+- Include db import: const db = require('../connection');
 
 Full file. Wrap in ```javascript fences. Then explain."""

@@ -17,7 +17,7 @@ from datetime import datetime
 
 from pattern_manager import load_pattern, map_operation_to_pattern, get_pattern_metadata, get_stack_info
 from parsers import extract_code_from_response, extract_explanation_from_response
-from file_manager import get_output_path,  assert_schema_ready, extract_table_from_schema
+from file_manager import assert_schema_ready, extract_table_from_schema, get_output_path
 
 
 def execute_sequential_generation(resource: str):
@@ -30,9 +30,9 @@ def execute_sequential_generation(resource: str):
     Hard fails if schema has not been generated.
     """
 
-    assert_schema_ready()                              # Rule of Law guard
-    schema = extract_table_from_schema(resource)       # Rule of Law read
-    stack  = get_stack_info()                          # stack from file_manager
+    assert_schema_ready()
+    schema = extract_table_from_schema(resource)
+    stack  = get_stack_info()
 
     print(f"\n{'='*60}")
     print(f"  SEQUENTIAL GENERATION: {resource}")
@@ -41,14 +41,16 @@ def execute_sequential_generation(resource: str):
 
     output_dir  = 'api/routes'
     output_file = get_output_path(*output_dir.split('/')) / f'{resource}.js'
+    output_file.parent.mkdir(parents=True, exist_ok=True)
 
     # Load query function names from generated file
     query_file = get_output_path('db', 'queries') / f'{resource}.queries.js'
     all_query_functions = []
     if query_file.exists():
         try:
-            content             = query_file.read_text(encoding='utf-8', errors='ignore')
-            all_query_functions = re.findall(r'export async function (\w+)\(', content)
+            content = query_file.read_text(encoding='utf-8', errors='ignore')
+            # Match both CommonJS (async function) and ES module (export async function)
+            all_query_functions = re.findall(r'(?:export\s+)?async function (\w+)\(', content)
             print(f"📋 Found {len(all_query_functions)} query functions")
         except Exception as e:
             print(f"⚠️  Could not extract query functions: {e}")
@@ -87,12 +89,14 @@ def execute_sequential_generation(resource: str):
 
     for i, route_info in enumerate(routes_to_generate):
         method_lower = route_info['method'].lower()
+        # Use short path (/:id or /) in the prompt so LLM writes correct router paths
+        short_path = route_info['short_path']
+
         print(f"\n{'─'*60}")
-        print(f"Step {i+1}/{len(routes_to_generate)}: {route_info['method']} {route_info['path']}")
+        print(f"Step {i+1}/{len(routes_to_generate)}: {route_info['method']} {short_path}")
         print(f"Query function: {route_info['func']}")
 
-        # Resolve pattern path from stack — GET/:id needs its own key
-        op_key       = "get by id" if (method_lower == 'get' and ':id' in route_info['path']) else method_lower
+        op_key       = "get by id" if (method_lower == 'get' and ':id' in short_path) else method_lower
         pattern_path = map_operation_to_pattern(op_key, stack)
         if not pattern_path:
             print(f"No pattern mapped for {method_lower}, skipping")
@@ -120,10 +124,15 @@ THE FILE ALREADY HAS:
 PATTERN TO ADD:
 {pattern}
 
-TASK: Add a {route_info['method']} {route_info['path']} route using {route_info['func']}.
+TASK: Add a {route_info['method']} {short_path} route using {route_info['func']}.
 
-DO NOT ADD: express/router setup, require() imports, module.exports.
-ONLY ADD: router.{method_lower}("{route_info['path']}", authenticateToken, async (req, res) => {{ ... }});
+CRITICAL RULES:
+- The router is already mounted at /api/{resource} in app.js
+- So route paths MUST be "{short_path}" NOT "/{resource}" or "/{resource}/:id"
+- DO NOT add express/router setup, require() imports, or module.exports
+- ONLY add: router.{method_lower}("{short_path}", authenticateToken, async (req, res) => {{ ... }});
+- Do NOT add duplicate-check logic using the wrong function
+- Do NOT delete fields like price from the response — only delete password_hash
 
 Adapt "users" → "{resource}". Use {route_info['func']} (already imported).
 Generate ONLY the router.{method_lower}(...) block. No imports.
@@ -139,6 +148,9 @@ Generate ONLY the router.{method_lower}(...) block. No imports.
                 print(f"⚠️  No code block found")
                 continue
 
+            # Post-process: fix any route paths the LLM got wrong
+            code = _fix_route_paths(code, resource, short_path, method_lower)
+
             existing = output_file.read_text(encoding='utf-8', errors='ignore')
             output_file.write_text(existing.rstrip() + "\n\n" + code.strip(), encoding='utf-8')
 
@@ -149,12 +161,12 @@ Generate ONLY the router.{method_lower}(...) block. No imports.
                 existing_notes = ''
             notes_file.write_text(
                 existing_notes
-                + f"\n{'='*60}\nAdded: {timestamp} - {route_info['method']} {route_info['path']}\n\n"
+                + f"\n{'='*60}\nAdded: {timestamp} - {route_info['method']} {short_path}\n\n"
                 + (explanation or f"Added {route_info['method']} route."),
                 encoding='utf-8'
             )
 
-            completed_routes.append(f"{route_info['method']} {route_info['path']}")
+            completed_routes.append(f"{route_info['method']} {short_path}")
             print(f"✅ Step {i+1} complete")
 
         except Exception as e:
@@ -168,6 +180,33 @@ Generate ONLY the router.{method_lower}(...) block. No imports.
     print(f"  COMPLETE! {len(completed_routes)} routes generated for {resource}")
     print(f"  File: {output_file}")
     print('='*60)
+
+
+def _fix_route_paths(code: str, resource: str, short_path: str, method: str) -> str:
+    """
+    Post-process: replace any doubled resource paths the LLM may have written.
+    e.g. router.get("/books/:id", ...) → router.get("/:id", ...)
+         router.get("/books", ...)     → router.get("/", ...)
+    """
+    # Fix /{resource}/:id → /:id
+    code = re.sub(
+        rf'(router\.{method}\s*\()\s*["\']/{resource}/:id["\']',
+        r'\1"/:id"',
+        code
+    )
+    # Fix /{resource}/by-... → /by-...
+    code = re.sub(
+        rf'(router\.{method}\s*\()\s*["\']/{resource}(/by-[^"\']+)["\']',
+        r'\1"\2"',
+        code
+    )
+    # Fix /{resource} → /  (only when it's the full path, not a prefix)
+    code = re.sub(
+        rf'(router\.{method}\s*\()\s*["\']/{resource}["\']',
+        r'\1"/"',
+        code
+    )
+    return code
 
 
 def map_query_to_route(func_name, resource):
@@ -189,20 +228,20 @@ def map_query_to_route(func_name, resource):
     resource_cap = resource_singular.capitalize()
 
     if func_name.startswith(f'create{resource_cap}'):
-        return {'method': 'POST',   'path': f'/{resource}',     'func': func_name}
+        return {'method': 'POST',   'short_path': '/',     'func': func_name}
     elif func_name == f'get{resource_cap}s':
-        return {'method': 'GET',    'path': f'/{resource}',     'func': func_name}
+        return {'method': 'GET',    'short_path': '/',     'func': func_name}
     elif 'ById' in func_name and func_name.startswith(f'get{resource_cap}'):
-        return {'method': 'GET',    'path': f'/{resource}/:id', 'func': func_name}
+        return {'method': 'GET',    'short_path': '/:id',  'func': func_name}
     elif func_name.startswith(f'update{resource_cap}'):
-        return {'method': 'PUT',    'path': f'/{resource}/:id', 'func': func_name}
+        return {'method': 'PUT',    'short_path': '/:id',  'func': func_name}
     elif func_name.startswith(f'delete{resource_cap}'):
-        return {'method': 'DELETE', 'path': f'/{resource}/:id', 'func': func_name}
+        return {'method': 'DELETE', 'short_path': '/:id',  'func': func_name}
     elif func_name.startswith(f'get{resource_cap}sBy'):
-        after_by   = func_name.split('By')[1]
-        field_name = after_by.replace('WithDetails', '')
+        after_by    = func_name.split('By')[1]
+        field_name  = after_by.replace('WithDetails', '')
         field_snake = re.sub(r'(?<!^)(?=[A-Z])', '_', field_name).lower()
-        return {'method': 'GET', 'path': f'/{resource}/by-{field_snake}/:{field_snake}', 'func': func_name}
+        return {'method': 'GET', 'short_path': f'/by-{field_snake}/:{field_snake}', 'func': func_name}
     elif func_name.startswith(f'get{resource_cap}s') and 'With' in func_name:
         return None  # skip join variants when base getAll exists
 
