@@ -4,7 +4,7 @@ import sys as _sys, os as _os
 _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
 
 """
-Sequential App.js generation
+App.js generation
 
 Rule of Law: reads stack config from file_manager.load_stack()
              reads resources from file_manager.load_resources()
@@ -15,7 +15,6 @@ from pathlib import Path
 from datetime import datetime
 from pattern_manager import load_pattern
 from file_manager import load_stack, load_resources, assert_planning_complete
-from file_manager import save_generated_files
 import re
 
 
@@ -28,36 +27,38 @@ def generate_app_js():
     Hard fails if either planner has not run yet.
     """
 
-    assert_planning_complete()     # Rule of Law guard
-    stack_config = load_stack()    # Rule of Law read
+    assert_planning_complete()      # Rule of Law guard
+    stack_config = load_stack()     # Rule of Law read
     resources    = load_resources() # Rule of Law read
 
     stack     = stack_config.get("stack", {})
     language  = stack.get("backend", {}).get("language", "").lower()
     framework = stack.get("backend", {}).get("framework", "").lower()
 
-    pattern_path = f"patterns/{language}/{framework}/app-js-pattern.js"
+    pattern_path = f"{language}/{framework}/app-js-pattern.js"
     pattern      = load_pattern(pattern_path)
     if not pattern:
         print(f"⚠️  Pattern not found: {pattern_path}")
         return
 
+    # Strip doc comments
     pattern = re.sub(r'/\*\*[\s\S]*?\*/', '', pattern).strip()
 
+    # Build route imports and mounts
     imports = ""
     routes  = ""
     for resource_data in resources:
         res      = resource_data['name'].lower()
         imports += f"const {res}Router = require('./api/routes/{res}');\n"
-        routes  += f"app.use('/{res}', {res}Router);\n"
+        routes  += f"app.use('/api/{res}', {res}Router);\n"
 
-    content = pattern.replace('/* IMPORTS */', imports).replace('/* ROUTES */', routes)
+    content = pattern.replace('/* IMPORTS */', imports.strip()).replace('/* ROUTES */', routes.strip())
 
-    output_dir  = Path('output')
+    output_dir = Path('output')
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_file = str(output_dir / 'app.js')
-    timestamp   = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    output_file = output_dir / 'app.js'
 
-    save_generated_files(output_file, content, timestamp)
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    output_file.write_text(f"// Generated: {timestamp}\n\n{content}\n", encoding='utf-8')
 
     print(f"[app_generator] ✅ Generated {output_file}")

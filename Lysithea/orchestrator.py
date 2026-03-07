@@ -29,6 +29,8 @@ from generators.query_generator import generate_queries
 from generators.database_generator import generate_database
 from generators.middleware_generator import generate_middleware
 from generators.resource_generator import execute_sequential_generation
+from generators.app_generator import generate_app_js
+from generators.manifest_generator import generate_manifest
 
 
 def orchestrate(prompt_file='prompt.md'):
@@ -58,7 +60,7 @@ def orchestrate(prompt_file='prompt.md'):
     print("[Orchestrator] ✅ Schema ready")
 
     # ── Step 5: Generate all artifacts ─────────────────────────────
-    print("\n[Orchestrator] Step 4/5 — Generating database + middleware...")
+    print("\n[Orchestrator] Step 4/6 — Generating database + middleware...")
 
     # Database connection (stack-agnostic — reads stack from file_manager)
     generate_database('connection')
@@ -68,7 +70,7 @@ def orchestrate(prompt_file='prompt.md'):
     if api_requirements.get('security'):
         generate_middleware('auth')
 
-    print("\n[Orchestrator] Step 5/5 — Generating seeds, queries, and routes...")
+    print("\n[Orchestrator] Step 5/6 — Generating seeds, queries, and routes...")
 
     for resource_data in resources:
         resource_name = resource_data['name']
@@ -80,6 +82,11 @@ def orchestrate(prompt_file='prompt.md'):
 
         # Routes read queries + schema from file_manager internally
         execute_sequential_generation(resource_name)
+
+    # ── Step 6: App entry point + manifest ─────────────────────────
+    print("\n[Orchestrator] Step 6/6 — Generating app.js + package.json...")
+    generate_app_js()
+    generate_manifest()
 
     print("\n[Orchestrator] ✅ Lysithea pipeline complete.")
 
