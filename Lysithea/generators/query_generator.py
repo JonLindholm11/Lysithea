@@ -104,6 +104,26 @@ def _fix_connection_path(code: str) -> str:
     return code
 
 
+def _extract_safe_columns(table_schema: str) -> list[str]:
+    """
+    Parse CREATE TABLE SQL and return column names that are safe to SELECT
+    by default — excludes internal/sensitive system columns.
+    """
+    SKIP = {'id', 'password_hash', 'is_deleted', 'deleted_at'}
+    columns = []
+    for line in table_schema.splitlines():
+        line = line.strip().rstrip(',')
+        if not line:
+            continue
+        upper = line.upper()
+        if any(upper.startswith(k) for k in ('CREATE', 'PRIMARY', 'UNIQUE', 'CHECK', 'FOREIGN', 'REFERENCES', 'INDEX', ')')):
+            continue
+        col_name = line.split()[0].lower()
+        if col_name and col_name not in SKIP:
+            columns.append(col_name)
+    return columns
+
+
 def execute_sequential_query_generation(resource: str, table_schema: str | None, stack: dict | None = None):
     """Generate query functions one at a time for a resource."""
 
@@ -155,6 +175,25 @@ def execute_sequential_query_generation(resource: str, table_schema: str | None,
         singular = resource
     cap_singular = singular.capitalize()
 
+    # Pre-compute safe SELECT columns from schema (excludes password_hash, is_deleted, etc.)
+    safe_columns = _extract_safe_columns(table_schema) if table_schema else []
+    safe_select  = ', '.join(['id'] + safe_columns + ['created_at', 'updated_at']) if safe_columns else '*'
+
+    # Pre-compute whitelisted UPDATE columns (excludes id, created_at, password_hash, is_deleted, deleted_at)
+    UPDATE_SKIP = {'id', 'created_at', 'password_hash', 'is_deleted', 'deleted_at'}
+    update_columns = []
+    if table_schema:
+        for line in table_schema.splitlines():
+            line = line.strip().rstrip(',')
+            if not line:
+                continue
+            upper = line.upper()
+            if any(upper.startswith(k) for k in ('CREATE', 'PRIMARY', 'UNIQUE', 'CHECK', 'FOREIGN', 'REFERENCES', 'INDEX', ')')):
+                continue
+            col_name = line.split()[0].lower()
+            if col_name and col_name not in UPDATE_SKIP:
+                update_columns.append(col_name)
+
     for i, query_type in enumerate(query_types):
         print(f"\n{'─'*60}")
 
@@ -189,6 +228,8 @@ def execute_sequential_query_generation(resource: str, table_schema: str | None,
             table_schema=table_schema,
             pattern=pattern,
             completed_functions=completed_functions,
+            safe_select=safe_select,
+            update_columns=update_columns,
         )
 
         try:
@@ -256,7 +297,7 @@ def execute_sequential_query_generation(resource: str, table_schema: str | None,
 
 
 def _build_prompt(query_type, display_name, field_name, resource, singular, cap_singular,
-                  table_schema, pattern, completed_functions):
+                  table_schema, pattern, completed_functions, safe_select='*', update_columns=None):
     """Build the LLM prompt for a given query type."""
     existing_block = (
         f"EXISTING FUNCTIONS (do not modify):\n"
@@ -310,6 +351,63 @@ SQL: {sql_hint}
 Include db import at top. Full file. Wrap in ```javascript fences.
 Then explain."""
 
+    # ── get-all ──────────────────────────────────────────────────────────────
+    elif query_type == 'get-all':
+        select_rule = (
+            f"- SELECT columns: {safe_select}\n"
+            f"- Do NOT select password_hash or is_deleted in this query\n"
+            f"- Return {{ data, total }} — use generic key 'data', not the resource name"
+        )
+        task = f"Add the get-all function for {resource}." if completed_functions else f"Generate get-all function for {resource}."
+        base = f"{existing_block}\n\n{schema_block}\n\nPATTERN TO ADD:\n{pattern}" if completed_functions else f"{schema_block}\n\n=== PATTERN ===\n{pattern}"
+        suffix = "Generate ONLY the new function. No imports." if completed_functions else "Include db import at top. Full file."
+        return f"""{base}
+{naming_rules}
+{select_rule}
+TASK: {task}
+- Use ONLY columns from the schema
+{suffix}
+Wrap in ```javascript fences. Then explain briefly."""
+
+    # ── get-by-id ─────────────────────────────────────────────────────────────
+    elif query_type in ('get-by-id', 'get-by-id-with-join'):
+        select_rule = (
+            f"- SELECT columns: {safe_select}\n"
+            f"- Do NOT select password_hash, is_deleted, or deleted_at in this query\n"
+            f"- Return rows[0] (single record or undefined)"
+        )
+        task = f"Add the get-by-id function for {resource}." if completed_functions else f"Generate get-by-id function for {resource}."
+        base = f"{existing_block}\n\n{schema_block}\n\nPATTERN TO ADD:\n{pattern}" if completed_functions else f"{schema_block}\n\n=== PATTERN ===\n{pattern}"
+        suffix = "Generate ONLY the new function. No imports." if completed_functions else "Include db import at top. Full file."
+        return f"""{base}
+{naming_rules}
+{select_rule}
+TASK: {task}
+- Use ONLY columns from the schema
+{suffix}
+Wrap in ```javascript fences. Then explain briefly."""
+
+    # ── update ────────────────────────────────────────────────────────────────
+    elif query_type == 'update':
+        allowed = ', '.join(update_columns) if update_columns else 'only non-system columns'
+        update_rule = (
+            f"- The SET clause MUST use a whitelist — only allow these fields: {allowed}\n"
+            f"- Build the SET clause dynamically using Object.entries(updates) BUT only include keys in the whitelist\n"
+            f"- NEVER write arbitrary client keys directly to the database\n"
+            f"- Do NOT allow password_hash, is_deleted, deleted_at, id, or created_at to be updated via this function"
+        )
+        task = f"Add the update function for {resource}." if completed_functions else f"Generate update function for {resource}."
+        base = f"{existing_block}\n\n{schema_block}\n\nPATTERN TO ADD:\n{pattern}" if completed_functions else f"{schema_block}\n\n=== PATTERN ===\n{pattern}"
+        suffix = "Generate ONLY the new function. No imports." if completed_functions else "Include db import at top. Full file."
+        return f"""{base}
+{naming_rules}
+{update_rule}
+TASK: {task}
+- Use ONLY columns from the schema
+{suffix}
+Wrap in ```javascript fences. Then explain briefly."""
+
+    # ── all other query types (create, delete, get-with-joins) ────────────────
     else:
         if completed_functions:
             return f"""{existing_block}\n\n{schema_block}\n\nPATTERN TO ADD:\n{pattern}

@@ -1,54 +1,54 @@
 /**
  * @output-dir db/queries
  * @file-naming {resource}.queries.js
- * 
+ *
  * PATTERN: Update Query Function
  *
- * Updates a record by ID with new values
- * Returns the updated record
+ * Updates a record by ID with partial field support.
+ * Returns the updated record.
+ *
+ * CRITICAL:
+ * - Use CommonJS: async function, NO export keyword
+ * - Build SET clause dynamically — only update fields provided in updates object
+ * - Always append updated_at = NOW() to SET clause
+ * - Do NOT hardcode email/username — adapt field names from schema
+ * - Throw an error if record not found so route can return 404
  */
 
 const db = require('../connection');
 
-/**
- * Update user (supports partial updates)
- */
-export async function updateUser(id, updates) {
-  // Build dynamic query based on provided fields
+async function updateResource(id, updates) {
   const fields = [];
   const values = [];
   let paramCount = 1;
 
-  if (updates.email !== undefined) {
-    fields.push(`email = $${paramCount}`);
-    values.push(updates.email);
-    paramCount++;
-  }
-
-  if (updates.username !== undefined) {
-    fields.push(`username = $${paramCount}`);
-    values.push(updates.username);
-    paramCount++;
+  // Dynamically build SET clause from provided fields
+  for (const [key, value] of Object.entries(updates)) {
+    if (value !== undefined) {
+      fields.push(`${key} = $${paramCount}`);
+      values.push(value);
+      paramCount++;
+    }
   }
 
   // Always update timestamp
   fields.push(`updated_at = NOW()`);
 
-  // Add ID as final parameter
+  // ID is the final parameter
   values.push(id);
 
   const SQL = `
-    UPDATE users
+    UPDATE resources
     SET ${fields.join(', ')}
     WHERE id = $${paramCount}
     RETURNING *
   `;
-  
-  const { rows: [user] } = await db.query(SQL, values);
-  
-  if (!user) {
-    throw new Error("User not found");
+
+  const { rows: [record] } = await db.query(SQL, values);
+
+  if (!record) {
+    throw new Error("Resource not found");
   }
-  
-  return user;
+
+  return record;
 }

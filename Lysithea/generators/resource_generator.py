@@ -89,8 +89,7 @@ def execute_sequential_generation(resource: str):
 
     for i, route_info in enumerate(routes_to_generate):
         method_lower = route_info['method'].lower()
-        # Use short path (/:id or /) in the prompt so LLM writes correct router paths
-        short_path = route_info['short_path']
+        short_path   = route_info['short_path']
 
         print(f"\n{'─'*60}")
         print(f"Step {i+1}/{len(routes_to_generate)}: {route_info['method']} {short_path}")
@@ -112,6 +111,9 @@ def execute_sequential_generation(resource: str):
             if schema else ""
         )
 
+        # Build method-specific extra rules to prevent auth-pattern bleed
+        method_specific_rules = _build_method_rules(method_lower, short_path, resource, route_info['func'], all_query_functions)
+
         prompt = f"""You are adding a new route to an EXISTING Express router file.
 
 THE FILE ALREADY HAS:
@@ -131,10 +133,12 @@ CRITICAL RULES:
 - So route paths MUST be "{short_path}" NOT "/{resource}" or "/{resource}/:id"
 - DO NOT add express/router setup, require() imports, or module.exports
 - ONLY add: router.{method_lower}("{short_path}", authenticateToken, async (req, res) => {{ ... }});
-- Do NOT add duplicate-check logic using the wrong function
-- Do NOT delete fields like price from the response — only delete password_hash
+- The ONLY query functions available are: {", ".join(all_query_functions)}
+- Do NOT call any function not in that list — especially getUserByEmail or any auth function
+- Do NOT delete fields from the response unless the schema has a password_hash column
+{method_specific_rules}
 
-Adapt "users" → "{resource}". Use {route_info['func']} (already imported).
+Use {route_info['func']} (already imported). Adapt all variable names to use '{resource}'.
 Generate ONLY the router.{method_lower}(...) block. No imports.
 """
 
@@ -182,6 +186,39 @@ Generate ONLY the router.{method_lower}(...) block. No imports.
     print('='*60)
 
 
+def _build_method_rules(method: str, short_path: str, resource: str, func: str, all_funcs: list) -> str:
+    """
+    Return method-specific rules to prevent the LLM copying patterns that don't apply.
+    Prevents auth-route logic (email checks, getUserByEmail) leaking into generic routes.
+    """
+    if method == 'post':
+        return (
+            f"- This is a standard CREATE route, NOT an auth/register route\n"
+            f"- Do NOT add email-duplicate checks or any existence check before inserting\n"
+            f"- Do NOT reference req.params.id — POST routes have no :id parameter\n"
+            f"- Do NOT call getUserByEmail or any function not in the imports list\n"
+            f"- Name the request body variable 'fields' or 'data', NOT '{resource}' or '{resource}s'\n"
+            f"- Name the created record 'newRecord', NOT 'new{resource.capitalize()}' or 'new{resource.capitalize()}s'\n"
+            f"- Simply validate req.body fields, call {func}(req.body), return 201"
+        )
+    elif method == 'put':
+        return (
+            f"- Do NOT reference req.params.id as a string — parse it with parseInt first\n"
+            f"- Call {func}(id, req.body) where id = parseInt(req.params.id)"
+        )
+    elif method == 'delete':
+        return (
+            f"- Do NOT reference req.params.id as a string — parse it with parseInt first\n"
+            f"- Call {func}(id) where id = parseInt(req.params.id)"
+        )
+    elif method == 'get' and ':id' in short_path:
+        return (
+            f"- Do NOT reference req.params.id as a string — parse it with parseInt first\n"
+            f"- Call {func}(id) where id = parseInt(req.params.id)"
+        )
+    return ""
+
+
 def _fix_route_paths(code: str, resource: str, short_path: str, method: str) -> str:
     """
     Post-process: replace any doubled resource paths the LLM may have written.
@@ -213,8 +250,8 @@ def map_query_to_route(func_name, resource):
     """Map a query function name to its Express route definition."""
     irregular = {
         'categories': 'category', 'statuses': 'status',
-        'addresses': 'address',   'aliases': 'alias',
-        'matrices': 'matrix',     'indices': 'index',
+        'addresses':  'address',  'aliases':  'alias',
+        'matrices':   'matrix',   'indices':  'index',
     }
     if resource in irregular:
         resource_singular = irregular[resource]
@@ -228,21 +265,35 @@ def map_query_to_route(func_name, resource):
     resource_cap = resource_singular.capitalize()
 
     if func_name.startswith(f'create{resource_cap}'):
-        return {'method': 'POST',   'short_path': '/',     'func': func_name}
-    elif func_name == f'get{resource_cap}s':
-        return {'method': 'GET',    'short_path': '/',     'func': func_name}
+        return {'method': 'POST',   'short_path': '/',    'func': func_name}
+
+    # GET all — matches: getUsers, getAllUsers, getPosts, getAllPosts, etc.
+    elif (
+        func_name == f'get{resource_cap}s'
+        or func_name == f'getAll{resource_cap}s'
+        or func_name == f'getAll{resource_cap}'
+    ):
+        return {'method': 'GET',    'short_path': '/',    'func': func_name}
+
+    # GET by ID — matches: getUserById, getPostById, etc.
     elif 'ById' in func_name and func_name.startswith(f'get{resource_cap}'):
-        return {'method': 'GET',    'short_path': '/:id',  'func': func_name}
+        return {'method': 'GET',    'short_path': '/:id', 'func': func_name}
+
     elif func_name.startswith(f'update{resource_cap}'):
-        return {'method': 'PUT',    'short_path': '/:id',  'func': func_name}
+        return {'method': 'PUT',    'short_path': '/:id', 'func': func_name}
+
     elif func_name.startswith(f'delete{resource_cap}'):
-        return {'method': 'DELETE', 'short_path': '/:id',  'func': func_name}
-    elif func_name.startswith(f'get{resource_cap}sBy'):
-        after_by    = func_name.split('By')[1]
+        return {'method': 'DELETE', 'short_path': '/:id', 'func': func_name}
+
+    # GET by field — matches: getUsersByEmail, getPostsByUserId, etc.
+    elif func_name.startswith(f'get{resource_cap}sBy') or func_name.startswith(f'get{resource_cap}By'):
+        after_by    = func_name.split('By', 1)[1]
         field_name  = after_by.replace('WithDetails', '')
         field_snake = re.sub(r'(?<!^)(?=[A-Z])', '_', field_name).lower()
         return {'method': 'GET', 'short_path': f'/by-{field_snake}/:{field_snake}', 'func': func_name}
+
+    # Skip join-only list variants (e.g. getUsersWithDetails) — covered by getAll
     elif func_name.startswith(f'get{resource_cap}s') and 'With' in func_name:
-        return None  # skip join variants when base getAll exists
+        return None
 
     return None

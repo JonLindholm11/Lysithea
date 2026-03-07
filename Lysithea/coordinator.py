@@ -6,6 +6,23 @@ Reads features from prompt.md, converts them into resources + operations,
 then writes the result to .lysithea/functions.json via file_manager.
 
 This is LAW FILE #1 — all generators depend on its output.
+
+functions.json shape:
+{
+  "users": {
+    "operations": ["get all", "get by id", "post", "put", "delete"],
+    "frontend":   ["dashboard"]
+  },
+  "posts": {
+    "operations": ["get all", "get by id", "post", "put", "delete"],
+    "frontend":   ["dashboard", "form"]
+  }
+}
+
+prompt.md Frontend Requirements syntax:
+  # Frontend Requirements
+  - Users: dashboard
+  - Posts: dashboard, form
 """
 
 import re
@@ -59,7 +76,10 @@ Example:
         resources = result.get('resources', [])
         if resources:
             functions_dict = {
-                r['name']: r.get('operations', [])
+                r['name']: {
+                    'operations': r.get('operations', []),
+                    'frontend':   [],
+                }
                 for r in resources
             }
             write_functions(functions_dict)
@@ -75,17 +95,33 @@ def plan_functions_from_prompt(prompt_file='prompt.md'):
     """
     Entry point used by orchestrator.py (file-based mode).
 
-    Reads prompt.md, plans resources + operations,
+    Reads prompt.md, plans resources + operations + frontend pages,
     and persists to .lysithea/functions.json.
 
+    Frontend Requirements section controls which pages are generated per resource:
+      - Users: dashboard          → list page only (no form)
+      - Posts: dashboard, form    → list page + form page
+
     Returns:
-        dict of {resource_name: [operations]} or None on failure.
+        dict of {resource_name: {operations, frontend}} or None on failure.
     """
     prompt_data = read_prompt_md(prompt_file)
     if not prompt_data or 'features' not in prompt_data:
         print("[coordinator] ❌ No features found in prompt.md")
         return None
 
+    # ── Parse frontend requirements ─────────────────────────────────────────
+    # frontend_requirements comes back as a flat dict from read_prompt.py:
+    # { 'users': 'dashboard', 'posts': 'dashboard, form' }
+    raw_frontend = prompt_data.get('frontend_requirements', {})
+    frontend_map = {}
+    for resource, value in raw_frontend.items():
+        resource_key = re.sub(r'\s+', '_', resource.strip().lower())
+        resource_key = re.sub(r'[^\w-]', '', resource_key)
+        pages = [p.strip().lower() for p in value.split(',') if p.strip()]
+        frontend_map[resource_key] = pages
+
+    # ── Build functions dict ────────────────────────────────────────────────
     functions_dict = {}
 
     for resource, ops in prompt_data['features'].items():
@@ -103,15 +139,23 @@ def plan_functions_from_prompt(prompt_file='prompt.md'):
                 operations.append(op_clean)
 
         operations = list(dict.fromkeys(operations))
-        functions_dict[resource_name] = operations
 
-    # ── Write law file ──────────────────────────────────────────────
+        # Get frontend pages for this resource — default to empty (no pages)
+        frontend_pages = frontend_map.get(resource_name, [])
+
+        functions_dict[resource_name] = {
+            'operations': operations,
+            'frontend':   frontend_pages,
+        }
+
+    # ── Write law file ──────────────────────────────────────────────────────
     write_functions(functions_dict)
-    # ───────────────────────────────────────────────────────────────
+    # ───────────────────────────────────────────────────────────────────────
 
     print(f"[coordinator] Planned {len(functions_dict)} resource(s):")
-    for res, ops in functions_dict.items():
-        print(f"  - {res}: {', '.join(ops)}")
+    for res, data in functions_dict.items():
+        pages = ', '.join(data['frontend']) if data['frontend'] else 'no frontend'
+        print(f"  - {res}: {', '.join(data['operations'])}  |  frontend: {pages}")
 
     return functions_dict
 

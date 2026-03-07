@@ -69,8 +69,6 @@ def get_law_dir(prompt_file='prompt.md') -> Path:
 
 
 # ─── Dynamic path accessors ───────────────────────────────────────────────────
-# Using functions instead of module-level constants so paths are
-# always resolved from the current prompt.md at call time.
 
 def _project_dir() -> Path:
     return get_project_dir()
@@ -164,12 +162,47 @@ def load_resources() -> list:
     """
     Convenience: return resources as a list of dicts expected by generators.
     Derived from functions.json — no separate file needed.
+
+    Handles both shapes of functions.json:
+
+    New shape (post-frontend config):
+      {
+        "users": {"operations": [...], "frontend": ["dashboard"]},
+        "posts": {"operations": [...], "frontend": ["dashboard", "form"]}
+      }
+
+    Legacy shape (flat list):
+      {
+        "users": ["get all", "get by id", ...],
+        "posts": ["get all", "get by id", ...]
+      }
+
+    Always returns:
+      [
+        {"name": "users", "operations": [...], "frontend": [...]},
+        ...
+      ]
     """
     functions = load_functions()
-    return [
-        {'name': resource, 'operations': ops}
-        for resource, ops in functions.items()
-    ]
+    resources = []
+
+    for resource, value in functions.items():
+        if isinstance(value, dict):
+            # New nested shape
+            resources.append({
+                'name':       resource,
+                'operations': value.get('operations', []),
+                'frontend':   value.get('frontend', []),
+            })
+        else:
+            # Legacy flat shape — list of operations, no frontend config
+            resources.append({
+                'name':       resource,
+                'operations': value if isinstance(value, list) else [],
+                'frontend':   [],
+            })
+
+    return resources
 
 
 def extract_table_from_schema(table_name: str) -> str | None:
@@ -199,7 +232,6 @@ def get_output_path(*parts) -> Path:
         get_output_path('api/routes')   ->  ../../book-store/backend/api/routes/
         get_output_path('db', 'queries')->  ../../book-store/backend/db/queries/
     """
-    # Flatten any slash-separated strings and filter out empty segments and '.'
     flat = []
     for p in parts:
         flat.extend(str(p).split('/'))

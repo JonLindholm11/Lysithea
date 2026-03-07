@@ -1,32 +1,34 @@
 /**
  * @output-dir db/queries
  * @file-naming {resource}.queries.js
- * 
+ *
  * PATTERN: Get By Field With Join Query Function
  *
- * Retrieves records by a field value with related data via JOINs
+ * Retrieves multiple records by a field value with related data via LEFT JOINs.
+ *
+ * CRITICAL:
+ * - Use CommonJS: async function, NO export keyword
+ * - Build JOIN for every REFERENCES column in the schema
+ * - Alias joined columns to avoid name collisions
+ * - Exclude password_hash from all SELECT clauses
+ * - Returns an array (multiple rows), not a single row
  */
 
 const db = require('../connection');
 
-/**
- * Get orders by customer ID with details
- */
-export async function getOrdersByCustomerIdWithDetails(customerId) {
+async function getResourcesByFieldWithDetails(fieldValue) {
   const SQL = `
     SELECT
-      orders.id,
-      orders.total_amount,
-      orders.order_status,
-      orders.created_date,
-      customers.id AS customer_id,
-      customers.company_name,
-      customers.contact_name,
-      customers.email AS customer_email
-    FROM orders
-    LEFT JOIN customers ON orders.customer_id = customers.id
-    WHERE orders.customer_id = $1
+      resources.id,
+      resources.field1,
+      resources.field2,
+      resources.created_at,
+      related.id   AS related_id,
+      related.name AS related_name
+    FROM resources
+    LEFT JOIN related ON resources.related_id = related.id
+    WHERE resources.field = $1
   `;
-  const { rows } = await db.query(SQL, [customerId]);
+  const { rows } = await db.query(SQL, [fieldValue]);
   return rows;
 }

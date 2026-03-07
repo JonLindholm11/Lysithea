@@ -1,23 +1,29 @@
 /**
  * @output-dir db/queries
  * @file-naming {resource}.queries.js
- * 
+ *
  * PATTERN: Create Query Function
+ *
+ * Inserts a new record and returns it.
+ *
+ * CRITICAL:
+ * - Use CommonJS: async function, NO export keyword
+ * - Accept a plain object of field values from req.body
+ * - Use RETURNING * so the full record is returned to the route
+ * - Do NOT hardcode users/email/username — adapt column names from schema
+ * - Do NOT hash passwords here — password hashing is auth.js only
  */
 
 const db = require('../connection');
 
-/**
- * Create a new user
- */
-export async function createUser({ email, username, password_hash }) {
+async function createResource({ field1, field2 }) {
   const SQL = `
-    INSERT INTO users (email, username, password_hash, created_at)
-    VALUES ($1, $2, $3, NOW())
+    INSERT INTO resources (field1, field2, created_at)
+    VALUES ($1, $2, NOW())
     RETURNING *
   `;
-  
-  const values = [email, username, password_hash];
-  const { rows: [user] } = await db.query(SQL, values);
-  return user;
+
+  const values = [field1, field2];
+  const { rows: [record] } = await db.query(SQL, values);
+  return record;
 }
