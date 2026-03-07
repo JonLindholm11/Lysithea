@@ -7,7 +7,7 @@
  * Retrieves a single record by ID with related data via JOINs
  */
 
-const db = require('../../connection');
+const db = require('../connection');
 
 /**
  * Get order by ID with customer details

@@ -7,7 +7,7 @@
  * Soft delete - marks record as deleted
  */
 
-const db = require('../../connection');
+const db = require('../connection');
 
 /**
  * Delete user (soft delete)

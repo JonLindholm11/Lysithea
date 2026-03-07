@@ -5,7 +5,7 @@
  * PATTERN: Create Query Function
  */
 
-const db = require('../../connection');
+const db = require('../connection');
 
 /**
  * Create a new user

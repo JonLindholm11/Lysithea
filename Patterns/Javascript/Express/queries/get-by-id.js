@@ -7,7 +7,7 @@
  * Retrieves a single record by primary key
  */
 
-const db = require('../../connection');
+const db = require('../connection');
 
 /**
  * Get user by ID

@@ -8,7 +8,7 @@
  * Returns the updated record
  */
 
-const db = require('../../connection');
+const db = require('../connection');
 
 /**
  * Update user (supports partial updates)
