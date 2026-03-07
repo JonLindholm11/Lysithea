@@ -4,38 +4,37 @@ import sys as _sys, os as _os
 _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
 
 """
-Manifest Generator (Pattern-based)
+Manifest (package.json / requirements.txt) generation
 
 Rule of Law: reads stack config from file_manager.load_stack()
-             call generate_manifest() — no stack_config arg.
+             call generate_manifest() — no args.
 """
 
-from pathlib import Path
-from datetime import datetime
-from pattern_manager import load_pattern
-from file_manager import load_stack, assert_planning_complete
-from file_manager import save_generated_files
 import json
 import re
+from pathlib import Path
+from datetime import datetime
+
+from pattern_manager import load_pattern
+from file_manager import load_stack, assert_planning_complete
 
 
 def generate_manifest():
     """
-    Generate manifest/dependency file (package.json, requirements.txt, etc.)
+    Generate package.json (JS) or requirements.txt (Python) for the current stack.
 
-    Reads stack config from .lysithea/stack.json via file_manager.
+    Reads stack from .lysithea/stack.json via file_manager.
     Hard fails if stack_planner has not run yet.
     """
 
     assert_planning_complete()   # Rule of Law guard
     stack_config = load_stack()  # Rule of Law read
 
-    backend          = stack_config.get("stack", {}).get("backend", {})
-    language         = backend.get("language", "").lower()
-    framework        = backend.get("framework", "").lower()
+    backend   = stack_config.get("stack", {}).get("backend", {})
+    language  = backend.get("language", "").lower()
+    framework = backend.get("framework", "").lower()
 
-    frontend         = stack_config.get("stack", {}).get("frontend", {})
-    frontend_framework = frontend.get("framework", "").lower()
+    project_name = stack_config.get("project_name", "my-app").lower().replace(" ", "-")
 
     output_dir = Path("output")
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -43,38 +42,28 @@ def generate_manifest():
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     if language == "javascript":
-        if frontend_framework == "react":
-            pattern_path = "patterns/javascript/react/package-json-pattern.js"
-        else:
-            pattern_path = f"patterns/javascript/{frontend_framework}/package-json-pattern.js"
-        filename = "package.json"
+        pattern_path = f"{language}/{framework}/package-json-pattern.js"
+        output_file  = output_dir / "package.json"
     elif language == "python":
-        pattern_path = f"patterns/python/{framework}/requirements-pattern.txt"
-        filename = "requirements.txt"
+        pattern_path = f"{language}/{framework}/requirements-pattern.txt"
+        output_file  = output_dir / "requirements.txt"
     elif language == "ruby":
-        pattern_path = f"patterns/ruby/{framework}/Gemfile-pattern.rb"
-        filename = "Gemfile"
+        pattern_path = f"{language}/{framework}/Gemfile-pattern.rb"
+        output_file  = output_dir / "Gemfile"
     else:
-        print(f"⚠️  Unsupported language '{language}', cannot generate manifest")
+        print(f"⚠️  Unsupported language '{language}' for manifest generation")
         return
 
     pattern = load_pattern(pattern_path)
     if not pattern:
-        print(f"❌ Manifest pattern not found: {pattern_path}")
+        print(f"⚠️  Manifest pattern not found: {pattern_path}")
         return
 
+    # Strip doc comments
     pattern = re.sub(r'/\*\*[\s\S]*?\*/', '', pattern).strip()
 
-    if language == "javascript":
-        dependencies    = frontend.get("dependencies", {})
-        devDependencies = frontend.get("devDependencies", {})
-        pattern = pattern.replace("/* DEPENDENCIES */",     json.dumps(dependencies, indent=2))
-        pattern = pattern.replace("/* DEV_DEPENDENCIES */", json.dumps(devDependencies, indent=2))
-    elif language == "python":
-        deps    = backend.get("dependencies", [])
-        pattern = pattern.replace("/* DEPENDENCIES */", "\n".join(deps))
+    # Inject project name
+    content = pattern.replace('/* PROJECT_NAME */', project_name)
 
-    output_file = str(output_dir / filename)
-    save_generated_files(output_file, pattern, timestamp)
-
-    print(f"[manifest_generator] ✅ Generated {output_file} using {pattern_path}")
+    output_file.write_text(f"{content}\n", encoding='utf-8')
+    print(f"[manifest_generator] ✅ Generated {output_file}")
