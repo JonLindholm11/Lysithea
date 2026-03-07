@@ -17,7 +17,8 @@ Database: PostgreSQL
 - Rate limiting: false
 
 # Frontend Requirements
-- Pages: Dashboard, Posts
+- Users: dashboard
+- Posts: dashboard, form
 
 # Database / Schema Notes
 - Tables:

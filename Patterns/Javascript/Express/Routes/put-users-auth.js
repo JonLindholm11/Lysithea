@@ -1,36 +1,31 @@
-// patterns/javascript/express/routes/put-user-auth.js
+// patterns/javascript/express/routes/put-users-auth.js
 
 /**
  * @output-dir api/routes
  * @file-naming {resource}.js
-
+ *
  * PATTERN: Express PUT Route with Authentication and Validation
  *
  * USE WHEN:
  * - Updating existing resources in database
  * - Route requires authentication (JWT)
- * - Need input validation and sanitization
- * - Using PostgreSQL with raw SQL queries
- * - Need to verify resource exists before updating
+ * - Need input validation
+ * - Using PostgreSQL via query functions
  *
  * DEMONSTRATES:
  * - JWT authentication middleware
  * - URL parameter extraction (/:id)
  * - Request body validation
- * - Parameterized SQL queries (SQL injection safe)
  * - Error handling with try/catch
- * - Proper HTTP status codes (200, 400, 401, 404, 409, 500)
- * - Preventing duplicate entries
+ * - Proper HTTP status codes (200, 400, 401, 404, 500)
  * - Returning updated resource
  *
  * SECURITY NOTES:
  * - authenticateToken middleware REQUIRED for protected routes
  * - Validate ALL input fields before database update
- * - Use $1, $2 placeholders in SQL (NEVER string concatenation)
+ * - Do NOT call getUserByEmail or any auth-specific functions here
+ * - Do NOT import bcrypt — this is a generic resource route, not an auth route
  * - Check resource exists before attempting update
- * - Check for duplicate entries on unique fields
- * - Don't return sensitive data in response (passwords, tokens)
- * - Log errors server-side, don't expose details to client
  */
 
 const express = require("express");
@@ -38,156 +33,70 @@ const router = express.Router();
 const { authenticateToken } = require("../middleware/auth");
 
 /**
- * PUT /users/:id - Update an existing user
+ * PUT /:id - Update an existing resource
  *
  * Authentication: Required (JWT token in Authorization header)
  *
  * URL parameters:
- * - id: User ID (integer)
+ * - id: Resource ID (integer)
  *
- * Request body:
- * {
- *   "email": "newemail@example.com",
- *   "username": "newusername"
- * }
+ * Request body: fields to update
  *
  * Success Response (200):
- * {
- *   "data": {
- *     "id": 123,
- *     "email": "newemail@example.com",
- *     "username": "newusername",
- *     "created_at": "2024-01-15T10:30:00Z",
- *     "updated_at": "2024-01-20T14:45:00Z"
- *   }
- * }
+ * { "data": { "id": 123, ...fields, "updated_at": "..." } }
  *
  * Error Responses:
- * - 400: Invalid ID format or missing required fields
+ * - 400: Invalid ID format or missing fields
  * - 401: Missing or invalid authentication token
- * - 404: User not found
- * - 409: Email/username already taken by another user
+ * - 404: Resource not found
  * - 500: Server error
  */
 router.put(
-  "/users/:id",
+  "/:id",
   authenticateToken,
   async (req, res) => {
     try {
-      const { id } = req.params;
-      const userId = parseInt(id);
+      const resourceId = parseInt(req.params.id);
 
-      if (isNaN(userId)) {
+      if (isNaN(resourceId)) {
         return res.status(400).json({
-          error: "Invalid user ID format",
+          error: "Invalid ID format",
           code: "INVALID_ID",
         });
       }
 
-      const { email, username } = req.body;
+      const updates = req.body;
 
-      // Validate at least one field provided
-      if (!email && !username) {
+      if (!updates || Object.keys(updates).length === 0) {
         return res.status(400).json({
           error: "At least one field required for update",
           code: "MISSING_UPDATE_FIELDS",
-          allowed: ["email", "username"],
         });
       }
 
-      // Validate email format if provided
-      if (email) {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email)) {
-          return res.status(400).json({
-            error: "Invalid email format",
-            code: "INVALID_EMAIL",
-          });
-        }
-      }
+      // Check if resource exists
+      const existing = await getResourceById(resourceId);
 
-
-      // Check if user exists
-      const existingUser = await getUserById(userId);
-      
-      if (!existingUser) {
+      if (!existing) {
         return res.status(404).json({
-          error: "User not found",
-          code: "USER_NOT_FOUND",
+          error: "Resource not found",
+          code: "NOT_FOUND",
         });
       }
 
-      // Check for duplicate email (if changing email)
-      if (email && email !== existingUser.email) {
-        const duplicate = await getUserByEmail(email);
-        if (duplicate && duplicate.id !== userId) {
-          return res.status(409).json({
-            error: "Email already taken",
-            code: "DUPLICATE_EMAIL",
-          });
-        }
-      }
+      // Update resource
+      const updated = await updateResource(resourceId, updates);
 
-      // Update user
-      const updatedUser = await updateUser(userId, { email, username });
-
-      // Don't return password_hash
-      delete updatedUser.password_hash;
-
-      res.status(200).json({
-        data: updatedUser,
-      });
+      res.status(200).json({ data: updated });
     } catch (error) {
-      console.error("Error updating user:", error);
+      console.error("Error updating resource:", error);
 
       res.status(500).json({
-        error: "Failed to update user",
-        code: "UPDATE_USER_ERROR",
+        error: "Failed to update resource",
+        code: "UPDATE_ERROR",
       });
     }
   }
 );
 
 module.exports = router;
-
-/**
- * USAGE EXAMPLE:
- *
- * // In your main server file (server.js or app.js):
- * const userRoutes = require('./routes/users');
- * app.use('/api', userRoutes);
- *
- * // Making a request from client:
- * fetch('/api/users/123', {
- *   method: 'PUT',
- *   headers: {
- *     'Content-Type': 'application/json',
- *     'Authorization': 'Bearer <your_jwt_token>'
- *   },
- *   body: JSON.stringify({
- *     email: 'newemail@example.com',
- *     username: 'newusername'
- *   })
- * })
- * .then(res => res.json())
- * .then(data => {
- *   console.log(data.data);  // Updated user object
- * });
- *
- * // Example success response:
- * {
- *   "data": {
- *     "id": 123,
- *     "email": "newemail@example.com",
- *     "username": "newusername",
- *     "created_at": "2024-01-15T10:30:00Z",
- *     "updated_at": "2024-01-20T14:45:00Z"
- *   }
- * }
- *
- * // Example error response (duplicate):
- * {
- *   "error": "Email or username already taken",
- *   "code": "DUPLICATE_USER"
- * }
- */
