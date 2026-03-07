@@ -31,6 +31,10 @@ from generators.middleware_generator import generate_middleware
 from generators.resource_generator import execute_sequential_generation
 from generators.app_generator import generate_app_js
 from generators.manifest_generator import generate_manifest
+from generators.auth_generator import generate_auth
+from generators.env_generator import generate_env
+from generators.seeds_runner_generator import generate_seeds_runner
+from generators.project_files_generator import generate_project_files
 
 
 def orchestrate(prompt_file='prompt.md'):
@@ -70,6 +74,9 @@ def orchestrate(prompt_file='prompt.md'):
     if api_requirements.get('security'):
         generate_middleware('auth')
 
+    # Auth routes — only generated if users table exists
+    generate_auth()
+
     print("\n[Orchestrator] Step 5/6 — Generating seeds, queries, and routes...")
 
     for resource_data in resources:
@@ -83,10 +90,13 @@ def orchestrate(prompt_file='prompt.md'):
         # Routes read queries + schema from file_manager internally
         execute_sequential_generation(resource_name)
 
-    # ── Step 6: App entry point + manifest ─────────────────────────
-    print("\n[Orchestrator] Step 6/6 — Generating app.js + package.json...")
+    # ── Step 6: App entry point + manifest + env + project files ──
+    print("\n[Orchestrator] Step 6/6 — Generating app.js, package.json, .env.example, README, .gitignore...")
     generate_app_js()
     generate_manifest()
+    generate_env()
+    generate_seeds_runner()
+    generate_project_files()
 
     print("\n[Orchestrator] ✅ Lysithea pipeline complete.")
 

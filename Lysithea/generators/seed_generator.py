@@ -14,9 +14,9 @@ import ollama
 from pathlib import Path
 from datetime import datetime
 
-from pattern_manager import load_pattern, get_pattern_metadata
+from pattern_manager import load_pattern, get_pattern_metadata, extract_metadata_from_content
 from parsers import extract_code_from_response, extract_explanation_from_response
-from file_manager import assert_schema_ready, extract_table_from_schema
+from file_manager import get_output_path,  assert_schema_ready, extract_table_from_schema
 
 
 def generate_seeds(resource_name: str):
@@ -43,12 +43,11 @@ def generate_seeds(resource_name: str):
         print(f"⚠️  Pattern not found: {pattern_path}")
         return
 
-    metadata    = get_pattern_metadata(pattern_path)
-    output_dir  = metadata['output_dir'] if metadata else 'output'
+    metadata = extract_metadata_from_content(pattern)
+    output_dir  = metadata['output_dir'] if metadata else 'db/seeds'
     file_naming = metadata['file_naming'] if metadata else 'seed_{resource}.js'
     filename    = file_naming.replace('{resource}', resource_name)
-    output_file = Path('output') / output_dir / filename
-    output_file.parent.mkdir(parents=True, exist_ok=True)
+    output_file = get_output_path(*output_dir.split('/')) / filename
 
     prompt = f"""Generate a JavaScript seed file for the {resource_name} table.
 

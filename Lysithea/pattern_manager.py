@@ -72,16 +72,20 @@ def get_pattern_metadata(pattern_path: str) -> dict | None:
     pattern_content = load_pattern(pattern_path)
     if not pattern_content:
         return None
+    return extract_metadata_from_content(pattern_content)
 
+
+def extract_metadata_from_content(pattern_content: str) -> dict:
+    """Extract @output-dir and @file-naming from an already-loaded pattern string."""
     output_dir_match = re.search(r'@output-dir\s+(.+)', pattern_content)
-    output_dir       = output_dir_match.group(1).strip() if output_dir_match else 'output'
+    output_dir       = output_dir_match.group(1).strip() if output_dir_match else '.'
 
     file_naming_match = re.search(r'@file-naming\s+(.+)', pattern_content)
     file_naming       = file_naming_match.group(1).strip() if file_naming_match else '{resource}.js'
 
     return {
-        'output_dir':   output_dir,
-        'file_naming':  file_naming,
+        'output_dir':  output_dir,
+        'file_naming': file_naming,
     }
 
 

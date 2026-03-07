@@ -14,7 +14,7 @@ Rule of Law: reads stack config from file_manager.load_stack()
 from pathlib import Path
 from datetime import datetime
 from pattern_manager import load_pattern
-from file_manager import load_stack, load_resources, assert_planning_complete
+from file_manager import get_output_path,  load_stack, load_resources, assert_planning_complete
 import re
 
 
@@ -47,6 +47,13 @@ def generate_app_js():
     # Build route imports and mounts
     imports = ""
     routes  = ""
+
+    # Mount auth routes if users table exists
+    resource_names = [r['name'].lower() for r in resources]
+    if 'users' in resource_names:
+        imports += "const authRouter = require('./api/routes/auth');\n"
+        routes  += "app.use('/api/auth', authRouter);\n"
+
     for resource_data in resources:
         res      = resource_data['name'].lower()
         imports += f"const {res}Router = require('./api/routes/{res}');\n"
@@ -54,9 +61,7 @@ def generate_app_js():
 
     content = pattern.replace('/* IMPORTS */', imports.strip()).replace('/* ROUTES */', routes.strip())
 
-    output_dir = Path('output')
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output_file = output_dir / 'app.js'
+    output_file = get_output_path() / 'app.js'
 
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     output_file.write_text(f"// Generated: {timestamp}\n\n{content}\n", encoding='utf-8')

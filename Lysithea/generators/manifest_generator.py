@@ -16,7 +16,7 @@ from pathlib import Path
 from datetime import datetime
 
 from pattern_manager import load_pattern
-from file_manager import load_stack, assert_planning_complete
+from file_manager import get_output_path,  load_stack, assert_planning_complete
 
 
 def generate_manifest():
@@ -36,8 +36,7 @@ def generate_manifest():
 
     project_name = stack_config.get("project_name", "my-app").lower().replace(" ", "-")
 
-    output_dir = Path("output")
-    output_dir.mkdir(parents=True, exist_ok=True)
+    output_dir = get_output_path()
 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
