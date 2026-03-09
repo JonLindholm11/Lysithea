@@ -1,0 +1,59 @@
+// js/render.js — Main render loop and sidebar
+
+const PROJECT_NAV = [
+  {
+    id: 'config', label: 'Configure',
+    svg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+      <path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+    </svg>`
+  },
+  {
+    id: 'logs', label: 'Logs',
+    svg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+    </svg>`
+  },
+  {
+    id: 'patterns', label: 'Patterns',
+    svg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/>
+      <rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/>
+    </svg>`
+  }
+];
+
+function renderSidebar() {
+  const sidebar = $('#sidebar-nav');
+  const isHome  = state.activeProjectId === null;
+  const icons   = isHome ? [] : PROJECT_NAV;
+  const active  = isHome ? null : (state.projectNav[state.activeProjectId] || 'config');
+
+  sidebar.innerHTML = icons.map(nav => `
+    <button class="sidebar-icon-btn ${nav.id === active ? 'active' : ''}" data-nav="${nav.id}" title="${nav.label}">
+      ${nav.svg}
+      <span class="tooltip">${nav.label}</span>
+    </button>
+  `).join('');
+
+  sidebar.querySelectorAll('[data-nav]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (state.activeProjectId) {
+        state.projectNav[state.activeProjectId] = btn.dataset.nav;
+        renderWorkspace();
+        renderSidebar();
+      }
+    });
+  });
+}
+
+function renderContent() {
+  if (state.activeProjectId === null) renderProjectsHome();
+  else renderWorkspace();
+}
+
+function render() {
+  renderSidebar();
+  renderContent();
+  renderRightPanel();
+}
