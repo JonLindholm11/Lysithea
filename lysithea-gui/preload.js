@@ -20,7 +20,7 @@ contextBridge.exposeInMainWorld('lysithea', {
   readPatternFile: (filePath)              => ipcRenderer.invoke('read-pattern-file', { filePath }),
 
   // ── Generation ──────────────────────────────────────────────────────────────
-  runGeneration:  (projectPath, projectId) => ipcRenderer.send('run-generation',  { projectPath, projectId }),
+  runGeneration:  (projectPath, projectId, prompt) => ipcRenderer.send('run-generation',  { projectPath, projectId, prompt }),
   killGeneration: (projectId)              => ipcRenderer.send('kill-generation', { projectId }),
 
   // ── Context menu ────────────────────────────────────────────────────────────

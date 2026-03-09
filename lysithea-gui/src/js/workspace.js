@@ -38,7 +38,10 @@ function renderWorkspace() {
 }
 
 function renderNavView(nav, project) {
-  if (nav === 'config')   return renderConfigView(project);
+  if (nav === 'config') {
+    setTimeout(() => bindConfigView(project), 0);
+    return renderConfigView(project);
+  }
   if (nav === 'logs')     return renderLogsView(project);
   if (nav === 'patterns') return renderPatternsView(project);
   return '';
@@ -47,63 +50,178 @@ function renderNavView(nav, project) {
 // ─── Config view ──────────────────────────────────────────────────────────────
 
 function renderConfigView(project) {
-  return `
-    <div class="config-view">
-      <div class="config-section">
-        <div class="config-section-header">
-          <div class="config-section-title">prompt.md</div>
-        </div>
-        <div class="config-section-body">
-          <textarea class="prompt-editor" id="prompt-editor"
-            placeholder="Describe your project... Lysithea will plan and scaffold your full-stack app."
-            spellcheck="false"
-          >${project.prompt || ''}</textarea>
-        </div>
+  const c = project.config || {};
+  const s = project.stack  || {};
+
+  // Features rows
+  const features = (c.features && c.features.length)
+    ? c.features
+    : [{ name: '', ops: [] }];
+
+  const featureRows = features.map((f, i) => `
+    <div class="feature-row" data-index="${i}">
+      <input class="form-input feature-name" placeholder="Resource name (e.g. posts)"
+        value="${escapeAttr(f.name || '')}" />
+      <div class="feature-ops">
+        ${['crud','list','create','read','update','delete'].map(op => `
+          <label class="op-chip ${f.ops?.includes(op) ? 'active' : ''}">
+            <input type="checkbox" value="${op}" ${f.ops?.includes(op) ? 'checked' : ''} />
+            ${op}
+          </label>
+        `).join('')}
       </div>
+      <button class="btn-icon remove-feature" title="Remove">×</button>
+    </div>
+  `).join('');
+
+  return `
+    <div class="config-view structured">
 
       <div class="config-section">
         <div class="config-section-header">
-          <div class="config-section-title">Stack Configuration</div>
+          <div class="config-section-title">Stack</div>
         </div>
         <div class="config-section-body">
           <div class="stack-grid">
             <div class="stack-field">
               <label>Backend</label>
               <select class="stack-select" id="stack-backend">
-                <option value="express"  ${project.stack?.backend === 'express'  ? 'selected' : ''}>Express.js</option>
-                <option value="fastapi"  ${project.stack?.backend === 'fastapi'  ? 'selected' : ''}>FastAPI</option>
-                <option value="django"   ${project.stack?.backend === 'django'   ? 'selected' : ''}>Django</option>
+                <option value="express"  ${s.backend === 'express'  ? 'selected' : ''}>Express.js</option>
+                <option value="fastapi"  ${s.backend === 'fastapi'  ? 'selected' : ''}>FastAPI</option>
+                <option value="django"   ${s.backend === 'django'   ? 'selected' : ''}>Django</option>
               </select>
             </div>
             <div class="stack-field">
               <label>Frontend</label>
               <select class="stack-select" id="stack-frontend">
-                <option value="react"   ${project.stack?.frontend === 'react'   ? 'selected' : ''}>React</option>
-                <option value="vue"     ${project.stack?.frontend === 'vue'     ? 'selected' : ''}>Vue</option>
-                <option value="svelte"  ${project.stack?.frontend === 'svelte'  ? 'selected' : ''}>Svelte</option>
+                <option value="react"   ${s.frontend === 'react'   ? 'selected' : ''}>React 18 + Tailwind</option>
+                <option value="vue"     ${s.frontend === 'vue'     ? 'selected' : ''}>Vue</option>
+                <option value="svelte"  ${s.frontend === 'svelte'  ? 'selected' : ''}>Svelte</option>
+                <option value="none"    ${s.frontend === 'none'    ? 'selected' : ''}>None (API only)</option>
               </select>
             </div>
             <div class="stack-field">
               <label>Database</label>
               <select class="stack-select" id="stack-database">
-                <option value="postgresql" ${project.stack?.database === 'postgresql' ? 'selected' : ''}>PostgreSQL</option>
-                <option value="mysql"      ${project.stack?.database === 'mysql'      ? 'selected' : ''}>MySQL</option>
-                <option value="mongodb"    ${project.stack?.database === 'mongodb'    ? 'selected' : ''}>MongoDB</option>
+                <option value="postgresql" ${s.database === 'postgresql' ? 'selected' : ''}>PostgreSQL</option>
+                <option value="mysql"      ${s.database === 'mysql'      ? 'selected' : ''}>MySQL</option>
+                <option value="mongodb"    ${s.database === 'mongodb'    ? 'selected' : ''}>MongoDB</option>
               </select>
             </div>
             <div class="stack-field">
               <label>Auth</label>
               <select class="stack-select" id="stack-auth">
-                <option value="jwt"     ${project.stack?.auth === 'jwt'     ? 'selected' : ''}>JWT</option>
-                <option value="session" ${project.stack?.auth === 'session' ? 'selected' : ''}>Session</option>
-                <option value="oauth"   ${project.stack?.auth === 'oauth'   ? 'selected' : ''}>OAuth</option>
+                <option value="jwt"     ${s.auth === 'jwt'     ? 'selected' : ''}>JWT</option>
+                <option value="session" ${s.auth === 'session' ? 'selected' : ''}>Session</option>
+                <option value="oauth"   ${s.auth === 'oauth'   ? 'selected' : ''}>OAuth</option>
+                <option value="none"    ${s.auth === 'none'    ? 'selected' : ''}>None</option>
               </select>
             </div>
           </div>
         </div>
       </div>
+
+      <div class="config-section">
+        <div class="config-section-header">
+          <div class="config-section-title">Features</div>
+          <button class="btn-secondary btn-sm" id="add-feature">+ Add Resource</button>
+        </div>
+        <div class="config-section-body">
+          <div id="features-list">${featureRows}</div>
+        </div>
+      </div>
+
+      <div class="config-section">
+        <div class="config-section-header">
+          <div class="config-section-title">API Requirements</div>
+        </div>
+        <div class="config-section-body">
+          <div class="form-row-2">
+            <div class="form-field">
+              <label>Endpoint Style</label>
+              <select class="stack-select" id="api-style">
+                <option value="RESTful"  ${c.apiStyle === 'RESTful'  ? 'selected' : ''}>RESTful</option>
+                <option value="GraphQL"  ${c.apiStyle === 'GraphQL'  ? 'selected' : ''}>GraphQL</option>
+                <option value="tRPC"     ${c.apiStyle === 'tRPC'     ? 'selected' : ''}>tRPC</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label>Validation</label>
+              <select class="stack-select" id="api-validation">
+                <option value="true"  ${c.apiValidation !== false ? 'selected' : ''}>Enabled</option>
+                <option value="false" ${c.apiValidation === false  ? 'selected' : ''}>Disabled</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label>Rate Limiting</label>
+              <select class="stack-select" id="api-ratelimit">
+                <option value="false" ${!c.apiRateLimit ? 'selected' : ''}>Disabled</option>
+                <option value="true"  ${c.apiRateLimit  ? 'selected' : ''}>Enabled</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="config-section">
+        <div class="config-section-header">
+          <div class="config-section-title">Database / Schema Notes</div>
+        </div>
+        <div class="config-section-body">
+          <textarea class="form-textarea" id="db-notes"
+            placeholder="e.g.&#10;- Tables:&#10;  - users: email, username, password_hash&#10;  - posts: title, content, user_id&#10;- Relationships:&#10;  - posts belongs to users"
+            spellcheck="false"
+          >${escapeHtml(c.dbNotes || '')}</textarea>
+        </div>
+      </div>
+
+      <div class="config-section">
+        <div class="config-section-header">
+          <div class="config-section-title">Extra Notes</div>
+        </div>
+        <div class="config-section-body">
+          <textarea class="form-textarea short" id="extra-notes"
+            placeholder="e.g. Use async/await throughout. Style: corporate."
+            spellcheck="false"
+          >${escapeHtml(c.extraNotes || '')}</textarea>
+        </div>
+      </div>
+
     </div>
   `;
+}
+
+function bindConfigView(project) {
+  // Add feature row
+  $('#add-feature')?.addEventListener('click', () => {
+    saveProjectConfig(project);
+    project = state.projects.find(p => p.id === project.id);
+    const c = project.config || {};
+    c.features = [...(c.features || []), { name: '', ops: [] }];
+    state.projects = state.projects.map(p => p.id === project.id ? { ...p, config: c } : p);
+    render();
+  });
+
+  // Remove feature row
+  document.querySelectorAll('.remove-feature').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const i = parseInt(btn.closest('.feature-row').dataset.index);
+      saveProjectConfig(project);
+      project = state.projects.find(p => p.id === project.id);
+      const c = project.config || {};
+      c.features = (c.features || []).filter((_, fi) => fi !== i);
+      if (!c.features.length) c.features = [{ name: '', ops: [] }];
+      state.projects = state.projects.map(p => p.id === project.id ? { ...p, config: c } : p);
+      render();
+    });
+  });
+
+  // Op chip toggles
+  document.querySelectorAll('.op-chip input').forEach(cb => {
+    cb.addEventListener('change', () => {
+      cb.closest('.op-chip').classList.toggle('active', cb.checked);
+    });
+  });
 }
 
 // ─── Logs view ────────────────────────────────────────────────────────────────
@@ -272,24 +390,108 @@ async function openPatternPreview(filePath, fileName) {
 // ─── Save config ──────────────────────────────────────────────────────────────
 
 function saveProjectConfig(project) {
-  const prompt   = $('#prompt-editor')?.value;
-  const backend  = $('#stack-backend')?.value;
-  const frontend = $('#stack-frontend')?.value;
-  const database = $('#stack-database')?.value;
-  const auth     = $('#stack-auth')?.value;
+  const backend    = $('#stack-backend')?.value;
+  const frontend   = $('#stack-frontend')?.value;
+  const database   = $('#stack-database')?.value;
+  const auth       = $('#stack-auth')?.value;
+  const apiStyle   = $('#api-style')?.value;
+  const validation = $('#api-validation')?.value;
+  const rateLimit  = $('#api-ratelimit')?.value;
+  const dbNotes    = $('#db-notes')?.value;
+  const extraNotes = $('#extra-notes')?.value;
+
+  // Collect feature rows
+  const features = [];
+  document.querySelectorAll('.feature-row').forEach(row => {
+    const name = row.querySelector('.feature-name')?.value?.trim();
+    const ops  = [...row.querySelectorAll('.feature-ops input:checked')].map(cb => cb.value);
+    if (name) features.push({ name, ops });
+  });
+
+  const config = {
+    features,
+    apiStyle:      apiStyle   ?? project.config?.apiStyle,
+    apiValidation: validation === 'true',
+    apiRateLimit:  rateLimit  === 'true',
+    dbNotes:       dbNotes    ?? project.config?.dbNotes,
+    extraNotes:    extraNotes ?? project.config?.extraNotes,
+  };
+
+  const stack = {
+    backend:  backend  ?? project.stack?.backend,
+    frontend: frontend ?? project.stack?.frontend,
+    database: database ?? project.stack?.database,
+    auth:     auth     ?? project.stack?.auth,
+  };
+
+  // Build prompt.md from structured fields
+  const prompt = buildPromptMd(project.name, stack, config);
 
   state.projects = state.projects.map(p => p.id !== project.id ? p : {
-    ...p,
-    prompt: prompt ?? p.prompt,
-    stack: {
-      backend:  backend  ?? p.stack?.backend,
-      frontend: frontend ?? p.stack?.frontend,
-      database: database ?? p.stack?.database,
-      auth:     auth     ?? p.stack?.auth,
-    }
+    ...p, config, stack, prompt,
   });
 
   saveProject(state.projects.find(p => p.id === project.id));
+}
+
+function buildPromptMd(projectName, stack, config) {
+  const frontendLabel = {
+    react:  'React 18 + Tailwind',
+    vue:    'Vue',
+    svelte: 'Svelte',
+    none:   'None',
+  }[stack.frontend] || stack.frontend;
+
+  const backendLabel = {
+    express: 'Express.js + Node 20',
+    fastapi: 'FastAPI + Python',
+    django:  'Django + Python',
+  }[stack.backend] || stack.backend;
+
+  const dbLabel = {
+    postgresql: 'PostgreSQL',
+    mysql:      'MySQL',
+    mongodb:    'MongoDB',
+  }[stack.database] || stack.database;
+
+  const features   = config.features || [];
+  const featureLines = features.map(f =>
+    `- ${f.name}: ${f.ops.join(', ') || 'crud'}`
+  ).join('\n');
+
+  const frontendReqs = features
+    .filter(f => f.ops.includes('crud') || f.ops.includes('list') || f.ops.includes('create'))
+    .map(f => `- ${f.name}: dashboard${f.ops.includes('create') || f.ops.includes('crud') ? ', form' : ''}`)
+    .join('\n');
+
+  let md = `# Project Name\n${projectName}\n`;
+  md += `\n# Stack\nFrontend: ${frontendLabel}\nBackend: ${backendLabel}\nDatabase: ${dbLabel}\n`;
+
+  if (featureLines) {
+    md += `\n# Features\n${featureLines}\n`;
+  }
+
+  md += `\n# API Requirements\n`;
+  md += `- Security: ${stack.auth?.toUpperCase() || 'JWT'}\n`;
+  md += `- Endpoint style: ${config.apiStyle || 'RESTful'}\n`;
+  md += `- Validation: ${config.apiValidation !== false ? 'true' : 'false'}\n`;
+  md += `- Rate limiting: ${config.apiRateLimit ? 'true' : 'false'}\n`;
+
+  if (frontendReqs && stack.frontend !== 'none') {
+    md += `\n# Frontend Requirements\n${frontendReqs}\n`;
+  }
+
+  if (config.dbNotes?.trim()) {
+    const dbNotes = config.dbNotes.trim().replace(/^#\s*Database\s*\/?\s*Schema\s*Notes\s*\n?/i, '').trim();
+    if (dbNotes) md += `\n# Database / Schema Notes\n${dbNotes}\n`;
+  }
+
+  if (config.extraNotes?.trim()) {
+    const extraNotes = config.extraNotes.trim().replace(/^#\s*Extra\s*Notes\s*\n?/i, '').trim();
+    if (extraNotes) md += `\n# Extra Notes\n${extraNotes}\n`;
+  }
+
+  return md;
 }
 
 // ─── Navigation helpers ───────────────────────────────────────────────────────

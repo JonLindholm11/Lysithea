@@ -39,9 +39,17 @@ function writeRegistry(projects) {
 
 function readProjectMeta(projectPath) {
   try {
-    const metaPath = path.join(projectPath, '.lysithea');
-    if (!fs.existsSync(metaPath)) return null;
-    return JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+    // Check new location first: projectPath/.lysithea/.lysithea
+    const newMetaPath = path.join(projectPath, '.lysithea', '.lysithea');
+    if (fs.existsSync(newMetaPath)) {
+      return JSON.parse(fs.readFileSync(newMetaPath, 'utf8'));
+    }
+    // Fall back to old location for legacy projects
+    const oldMetaPath = path.join(projectPath, '.lysithea');
+    if (fs.existsSync(oldMetaPath) && !fs.statSync(oldMetaPath).isDirectory()) {
+      return JSON.parse(fs.readFileSync(oldMetaPath, 'utf8'));
+    }
+    return null;
   } catch {
     return null;
   }
@@ -49,9 +57,10 @@ function readProjectMeta(projectPath) {
 
 function writeProjectMeta(projectPath, meta) {
   try {
-    if (!fs.existsSync(projectPath)) fs.mkdirSync(projectPath, { recursive: true });
+    const metaDir = path.join(projectPath, '.lysithea');
+    if (!fs.existsSync(metaDir)) fs.mkdirSync(metaDir, { recursive: true });
     fs.writeFileSync(
-      path.join(projectPath, '.lysithea'),
+      path.join(metaDir, '.lysithea'),
       JSON.stringify(meta, null, 2),
       'utf8'
     );
@@ -101,16 +110,6 @@ function register(getWindow) {
       if (idx >= 0) registry[idx] = entry;
       else registry.push(entry);
       writeRegistry(registry);
-
-      if (project.projectPath) {
-        writeProjectMeta(project.projectPath, {
-          id:        project.id,
-          name:      project.name,
-          stack:     project.stack,
-          createdAt: project.createdAt,
-          updatedAt: project.updatedAt,
-        });
-      }
       return { ok: true };
     } catch (err) {
       return { ok: false, error: err.message };
