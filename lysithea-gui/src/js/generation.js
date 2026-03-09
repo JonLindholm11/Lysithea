@@ -2,19 +2,13 @@
 
 async function startGeneration(project) {
   saveProjectConfig(project);
+
+  // Re-read from state so we have the freshly built prompt.md content
   project = state.projects.find(p => p.id === project.id);
 
   if (!project.projectPath) {
     showToast('No project folder set. Select a folder in project config first.', 'error');
     return;
-  }
-
-  if (window.lysithea) {
-    const result = await window.lysithea.writePrompt(project.projectPath, project.prompt || '');
-    if (!result.ok) {
-      showToast(`Failed to write prompt.md: ${result.error}`, 'error');
-      return;
-    }
   }
 
   state.projectStatus[project.id] = 'running';
@@ -26,7 +20,7 @@ async function startGeneration(project) {
   addLog(project.id, 'system', 'stdout', `Project path: ${project.projectPath}`);
 
   if (window.lysithea) {
-    window.lysithea.runGeneration(project.projectPath, project.id);
+    window.lysithea.runGeneration(project.projectPath, project.id, project.prompt || '');
   } else {
     simulateGeneration(project.id);
   }

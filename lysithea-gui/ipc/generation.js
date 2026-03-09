@@ -3,6 +3,7 @@
 
 const { ipcMain } = require('electron');
 const path  = require('path');
+const fs    = require('fs');
 const { spawn } = require('child_process');
 
 const activeProcs = new Map();
@@ -10,7 +11,7 @@ const activeProcs = new Map();
 function register(getWindow) {
 
   // Run the Python orchestrator
-  ipcMain.on('run-generation', (_e, { projectPath, projectId }) => {
+  ipcMain.on('run-generation', (_e, { projectPath, projectId, prompt }) => {
     // Kill any existing process for this project
     if (activeProcs.has(projectId)) {
       activeProcs.get(projectId).kill();
@@ -19,8 +20,17 @@ function register(getWindow) {
 
     // lysithea-gui/ is one level up from __dirname (ipc/),
     // repo root is one more level up, Python package is inside Lysithea/
-    const repoRoot  = path.resolve(__dirname, '..', '..');
-    const pkgDir    = path.join(repoRoot, 'Lysithea');
+    const repoRoot = path.resolve(__dirname, '..', '..');
+    const pkgDir   = path.join(repoRoot, 'Lysithea');
+
+    console.log(`[generation] __dirname: ${__dirname}`);
+    console.log(`[generation] repoRoot:  ${repoRoot}`);
+    console.log(`[generation] pkgDir:    ${pkgDir}`);
+
+    // Write prompt.md into the Python package dir so orchestrator finds it
+    const promptContent = prompt || '';
+    console.log(`[generation] Writing prompt.md (${promptContent.length} chars) to ${pkgDir}`);
+    fs.writeFileSync(path.join(pkgDir, 'prompt.md'), promptContent, 'utf8');
 
     const proc = spawn('python', ['orchestrator.py'], {
       cwd: pkgDir,
