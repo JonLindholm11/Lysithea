@@ -1,0 +1,138 @@
+/* styles/base.css — Design tokens, reset, app shell */
+
+:root {
+  --space-void:      #060810;
+  --space-deep:      #0a0e1a;
+  --space-dark:      #0d1220;
+  --surface:         #111827;
+  --surface-raised:  #151e30;
+  --surface-high:    #1a2540;
+  --border:          #1e3356;
+  --border-bright:   #2a4a7f;
+
+  --accent:          #3b82f6;
+  --accent-bright:   #60a5fa;
+  --accent-dim:      #1d4ed8;
+  --accent-glow:     rgba(59, 130, 246, 0.15);
+  --accent-glow-lg:  rgba(59, 130, 246, 0.08);
+  --cyan:            #22d3ee;
+  --cyan-dim:        rgba(34, 211, 238, 0.1);
+
+  --text-primary:    #e2e8f0;
+  --text-secondary:  #94a3b8;
+  --text-muted:      #475569;
+  --text-accent:     #60a5fa;
+
+  --success:         #22d3ee;
+  --success-dim:     rgba(34, 211, 238, 0.12);
+  --error:           #f87171;
+  --error-dim:       rgba(248, 113, 113, 0.12);
+  --warning:         #fbbf24;
+  --warning-dim:     rgba(251, 191, 36, 0.12);
+  --generating:      #a78bfa;
+  --generating-dim:  rgba(167, 139, 250, 0.12);
+
+  --font-display:    'Space Grotesk', sans-serif;
+  --font-body:       'Outfit', sans-serif;
+  --font-mono:       'DM Mono', monospace;
+
+  --titlebar-h:      40px;
+  --sidebar-w:       56px;
+  --right-panel-w:   280px;
+
+  --r-sm:   4px;
+  --r-md:   8px;
+  --r-lg:   12px;
+  --r-xl:   16px;
+  --r-full: 9999px;
+
+  --shadow-sm:   0 1px 3px rgba(0,0,0,0.4);
+  --shadow-md:   0 4px 16px rgba(0,0,0,0.5);
+  --shadow-lg:   0 8px 32px rgba(0,0,0,0.6);
+  --glow-accent: 0 0 20px rgba(59, 130, 246, 0.3);
+  --glow-sm:     0 0 8px rgba(59, 130, 246, 0.2);
+}
+
+/* ─── Reset ── */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; background: var(--space-void); }
+body { font-family: var(--font-body); color: var(--text-primary); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+input, textarea, select { font-family: inherit; color: inherit; }
+
+/* ─── Star field ── */
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    radial-gradient(1px 1px at 10% 15%, rgba(255,255,255,0.4) 0%, transparent 100%),
+    radial-gradient(1px 1px at 25% 45%, rgba(255,255,255,0.3) 0%, transparent 100%),
+    radial-gradient(1px 1px at 40% 20%, rgba(255,255,255,0.5) 0%, transparent 100%),
+    radial-gradient(1px 1px at 55% 70%, rgba(255,255,255,0.3) 0%, transparent 100%),
+    radial-gradient(1px 1px at 70% 10%, rgba(255,255,255,0.4) 0%, transparent 100%),
+    radial-gradient(1px 1px at 80% 55%, rgba(255,255,255,0.3) 0%, transparent 100%),
+    radial-gradient(1px 1px at 90% 30%, rgba(255,255,255,0.5) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 35% 60%, rgba(96,165,250,0.4) 0%, transparent 100%),
+    radial-gradient(1.5px 1.5px at 75% 40%, rgba(96,165,250,0.3) 0%, transparent 100%),
+    radial-gradient(2px 2px at 50% 5%, rgba(96,165,250,0.5) 0%, transparent 100%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ─── App shell ── */
+
+#app { display: flex; flex-direction: column; height: 100vh; position: relative; z-index: 1; }
+
+.layout { flex: 1; display: flex; overflow: hidden; background: var(--space-deep); }
+
+.content { flex: 1; overflow: hidden; display: flex; flex-direction: column; position: relative; }
+
+/* ─── Utility ── */
+
+.fade-in { animation: fadeIn 0.2s ease; }
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-bright); }
+
+/* ─── Shared buttons ── */
+
+.btn-primary {
+  padding: 8px 24px;
+  border-radius: var(--r-md);
+  background: linear-gradient(135deg, var(--accent-dim), var(--accent));
+  border: 1px solid var(--accent);
+  color: white;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-primary:hover { box-shadow: var(--glow-accent); }
+
+.btn-secondary {
+  padding: 8px 16px;
+  border-radius: var(--r-md);
+  background: transparent;
+  border: 1px solid var(--border-bright);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s;
+}
+
+.btn-secondary:hover { border-color: var(--accent); color: var(--accent-bright); }

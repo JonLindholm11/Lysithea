@@ -1,0 +1,12 @@
+{
+  "id": "8937bdcf-de54-423b-bbac-4f0354670af1",
+  "name": "blog",
+  "stack": {
+    "backend": "express",
+    "frontend": "react",
+    "database": "postgresql",
+    "auth": "jwt"
+  },
+  "createdAt": "2026-03-09T00:47:11.064Z",
+  "updatedAt": "2026-03-09T00:47:16.201Z"
+}
