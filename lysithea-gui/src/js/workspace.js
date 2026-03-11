@@ -502,6 +502,23 @@ function openProject(projectId) {
   if (!state.projectNav[projectId]) state.projectNav[projectId] = 'config';
   state.switcherOpen = false;
   render();
+
+  // Load file tree from disk so it's always populated on entry
+  const project = state.projects.find(p => p.id === projectId);
+  if (project?.outputPath && window.lysithea) {
+    window.lysithea.readFileTree(project.outputPath).then(result => {
+      if (!result.ok) return;
+      state.projects = state.projects.map(p =>
+        p.id === projectId ? { ...p, files: result.files } : p
+      );
+      const tree = document.getElementById('file-tree');
+      if (tree) {
+        const updated = state.projects.find(p => p.id === projectId);
+        tree.innerHTML = renderFileTree(updated);
+        bindFileTree(updated);
+      }
+    });
+  }
 }
 
 function switchToProject(projectId) {
@@ -511,6 +528,13 @@ function switchToProject(projectId) {
 }
 
 function goHome() {
+  // Clear files for the project being left so the tree doesn't persist stale state
+  if (state.activeProjectId) {
+    stopFileTreePoll(state.activeProjectId);
+    state.projects = state.projects.map(p =>
+      p.id === state.activeProjectId ? { ...p, files: [] } : p
+    );
+  }
   state.activeProjectId = null;
   state.switcherOpen = false;
   render();

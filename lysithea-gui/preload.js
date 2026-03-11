@@ -14,13 +14,13 @@ contextBridge.exposeInMainWorld('lysithea', {
   // ── File system ─────────────────────────────────────────────────────────────
   writePrompt:     (projectPath, content)  => ipcRenderer.invoke('write-prompt',      { projectPath, content }),
   readPrompt:      (projectPath)           => ipcRenderer.invoke('read-prompt',       { projectPath }),
-  readFileTree:    (projectPath)           => ipcRenderer.invoke('read-file-tree',    { projectPath }),
-  readFile:        (projectPath, filePath) => ipcRenderer.invoke('read-file',         { projectPath, filePath }),
+  readFileTree:    (outputPath)            => ipcRenderer.invoke('read-file-tree',    { outputPath }),
+  readFile:        (outputPath, filePath)  => ipcRenderer.invoke('read-file',         { projectPath: outputPath, filePath }),
   readPatterns:    ()                      => ipcRenderer.invoke('read-patterns'),
   readPatternFile: (filePath)              => ipcRenderer.invoke('read-pattern-file', { filePath }),
 
   // ── Generation ──────────────────────────────────────────────────────────────
-  runGeneration:  (projectPath, projectId, prompt) => ipcRenderer.send('run-generation',  { projectPath, projectId, prompt }),
+  runGeneration:  (outputPath, projectId, prompt) => ipcRenderer.send('run-generation',  { projectPath: outputPath, projectId, prompt }),
   killGeneration: (projectId)              => ipcRenderer.send('kill-generation', { projectId }),
 
   // ── Context menu ────────────────────────────────────────────────────────────

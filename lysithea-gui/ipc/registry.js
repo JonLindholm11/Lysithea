@@ -152,8 +152,8 @@ function register(getWindow) {
     const entry = {
       id:          meta.id || require('crypto').randomUUID(),
       name:        meta.name || path.basename(folderPath),
-      projectPath: folderPath,
-      outputPath:  path.join(folderPath, 'output'),
+      projectPath: path.dirname(folderPath),
+      outputPath:  folderPath,
       createdAt:   meta.createdAt || new Date().toISOString(),
       updatedAt:   meta.updatedAt || null,
     };

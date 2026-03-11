@@ -1,5 +1,48 @@
 // js/generation.js — Generation lifecycle, IPC listeners, simulation mode
 
+// ─── File tree polling ────────────────────────────────────────────────────────
+
+const _fileTreePolls = {}; // projectId → intervalId
+
+function startFileTreePoll(projectId) {
+  stopFileTreePoll(projectId); // clear any existing poll first
+  _fileTreePolls[projectId] = setInterval(async () => {
+    const project = state.projects.find(p => p.id === projectId);
+    if (!project?.outputPath || !window.lysithea) return;
+
+    const result = await window.lysithea.readFileTree(project.outputPath);
+    if (!result.ok) return;
+
+    // Only update + re-render the tree if files actually changed
+    const current = JSON.stringify(project.files || []);
+    const incoming = JSON.stringify(result.files);
+    if (current === incoming) return;
+
+    state.projects = state.projects.map(p =>
+      p.id === projectId ? { ...p, files: result.files } : p
+    );
+
+    // Patch the file tree DOM directly — no full re-render needed
+    if (state.activeProjectId === projectId) {
+      const tree = document.getElementById('file-tree');
+      if (tree) {
+        const updated = state.projects.find(p => p.id === projectId);
+        tree.innerHTML = renderFileTree(updated);
+        bindFileTree(updated);
+      }
+    }
+  }, 2000);
+}
+
+function stopFileTreePoll(projectId) {
+  if (_fileTreePolls[projectId]) {
+    clearInterval(_fileTreePolls[projectId]);
+    delete _fileTreePolls[projectId];
+  }
+}
+
+// ─── Generation lifecycle ─────────────────────────────────────────────────────
+
 async function startGeneration(project) {
   saveProjectConfig(project);
 
@@ -19,8 +62,10 @@ async function startGeneration(project) {
   addLog(project.id, 'system', 'stdout', `Starting generation for "${project.name}"...`);
   addLog(project.id, 'system', 'stdout', `Project path: ${project.projectPath}`);
 
+  startFileTreePoll(project.id);
+
   if (window.lysithea) {
-    window.lysithea.runGeneration(project.projectPath, project.id, project.prompt || '');
+    window.lysithea.runGeneration(project.outputPath, project.id, project.prompt || '');
   } else {
     simulateGeneration(project.id);
   }
@@ -61,11 +106,12 @@ function setupIPC() {
   });
 
   window.lysithea.onGenerationComplete(async ({ projectId, exitCode }) => {
+    stopFileTreePoll(projectId);
     state.projectStatus[projectId] = exitCode === 0 ? 'done' : 'error';
 
     const project = state.projects.find(p => p.id === projectId);
-    if (project?.projectPath) {
-      const result = await window.lysithea.readFileTree(project.projectPath);
+    if (project?.outputPath) {
+      const result = await window.lysithea.readFileTree(project.outputPath);
       if (result.ok) {
         state.projects = state.projects.map(p =>
           p.id === projectId ? { ...p, files: result.files, updatedAt: new Date().toISOString() } : p

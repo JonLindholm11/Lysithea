@@ -111,12 +111,12 @@ function bindProjectCards() {
           else showToast('No output path set for this project.', 'error');
           break;
         case 'terminal':
-          if (project.projectPath) window.lysithea.openInTerminal(project.projectPath);
-          else showToast('No project folder set.', 'error');
+          if (project.outputPath) window.lysithea.openInTerminal(project.outputPath);
+          else showToast('No output path set for this project.', 'error');
           break;
         case 'explorer':
-          if (project.projectPath) window.lysithea.openInExplorer(project.projectPath);
-          else showToast('No project folder set.', 'error');
+          if (project.outputPath) window.lysithea.openInExplorer(project.outputPath);
+          else showToast('No output path set for this project.', 'error');
           break;
         case 'rename':
           showRenameModal(project);
@@ -278,11 +278,13 @@ function showNewProjectModal() {
       return;
     }
 
+    const slug = name.toLowerCase().replace(/\s+/g, '-').replace(/[^\w-]/g, '');
+
     const project = {
       id:          crypto.randomUUID(),
       name,
       projectPath: folderPath || null,
-      outputPath:  folderPath ? folderPath + '/output' : null,
+      outputPath:  folderPath ? `${folderPath}/${slug}` : null,
       prompt:      '',
       stack:       { backend: 'express', frontend: 'react', database: 'postgresql', auth: 'jwt' },
       createdAt:   new Date().toISOString(),

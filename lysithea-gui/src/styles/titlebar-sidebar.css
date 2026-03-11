@@ -122,6 +122,17 @@
 
 .sidebar-icon-btn:hover .tooltip { opacity: 1; }
 
+.sidebar-divider {
+  width: 28px;
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+
+.sidebar-home-btn:hover {
+  color: var(--accent-bright);
+}
+
 .ollama-dot {
   position: absolute;
   bottom: 6px;
