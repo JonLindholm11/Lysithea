@@ -66,7 +66,11 @@ function renderProjectSwitcher() {
         </div>
       </div>
 
-      <div class="file-tree-label">Output Files</div>
+      <div class="file-tree-label" title="${activeProject.outputPath || ''}">
+        ${activeProject.outputPath
+          ? activeProject.outputPath.replace(/\\/g, '/').split('/').slice(-2).join('/')
+          : 'Output Files'}
+      </div>
       <div class="file-tree" id="file-tree">
         ${renderFileTree(activeProject)}
       </div>
@@ -194,9 +198,9 @@ function bindFileTree(project) {
 // ─── File preview ─────────────────────────────────────────────────────────────
 
 async function openFilePreview(project, filePath) {
-  if (!window.lysithea || !project.projectPath) return;
+  if (!window.lysithea || !project.outputPath) return;
 
-  const result = await window.lysithea.readFile(project.projectPath, filePath);
+  const result = await window.lysithea.readFile(project.outputPath, filePath);
   if (!result.ok) { showToast(`Could not read file: ${result.error}`, 'error'); return; }
 
   const body = document.getElementById('workspace-body');

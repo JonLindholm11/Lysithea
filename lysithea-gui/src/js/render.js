@@ -29,12 +29,25 @@ function renderSidebar() {
   const icons   = isHome ? [] : PROJECT_NAV;
   const active  = isHome ? null : (state.projectNav[state.activeProjectId] || 'config');
 
-  sidebar.innerHTML = icons.map(nav => `
+  const homeBtn = !isHome ? `
+    <button class="sidebar-icon-btn sidebar-home-btn" id="btn-sidebar-home" title="All Projects">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V9.5z"/>
+        <path d="M9 21V12h6v9"/>
+      </svg>
+      <span class="tooltip">All Projects</span>
+    </button>
+    <div class="sidebar-divider"></div>
+  ` : '';
+
+  sidebar.innerHTML = homeBtn + icons.map(nav => `
     <button class="sidebar-icon-btn ${nav.id === active ? 'active' : ''}" data-nav="${nav.id}" title="${nav.label}">
       ${nav.svg}
       <span class="tooltip">${nav.label}</span>
     </button>
   `).join('');
+
+  $('#btn-sidebar-home')?.addEventListener('click', () => goHome());
 
   sidebar.querySelectorAll('[data-nav]').forEach(btn => {
     btn.addEventListener('click', () => {

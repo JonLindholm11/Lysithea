@@ -39,10 +39,9 @@ function register(getWindow) {
     }
   });
 
-  // Read generated file tree (walks output/ directory)
-  ipcMain.handle('read-file-tree', async (_e, { projectPath }) => {
+  // Read generated file tree (walks outputPath directory directly)
+  ipcMain.handle('read-file-tree', async (_e, { outputPath }) => {
     try {
-      const outputPath = path.join(projectPath, 'output');
       if (!fs.existsSync(outputPath)) return { ok: true, files: [] };
 
       const walk = (dir, depth = 0) => {
@@ -70,7 +69,7 @@ function register(getWindow) {
   // Read individual file content for preview
   ipcMain.handle('read-file', async (_e, { projectPath, filePath }) => {
     try {
-      const fullPath = path.join(projectPath, 'output', filePath);
+      const fullPath = path.join(projectPath, filePath);
       if (!fs.existsSync(fullPath)) return { ok: false, error: 'File not found' };
       const content = fs.readFileSync(fullPath, 'utf8');
       return { ok: true, content };
