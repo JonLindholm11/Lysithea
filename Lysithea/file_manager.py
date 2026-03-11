@@ -7,23 +7,31 @@ All generators MUST read state through this module.
 No generator may receive resources/schema/stack as function arguments.
 
 Layout:
-  ../../{project_name}/          <- two levels up from Lysithea/
+  {LYSITHEA_PROJECT_PATH}/{project_name}/
     .lysithea/
       functions.json             <- written by coordinator.py
       stack.json                 <- written by stack_planner.py
       schema.sql                 <- written by schema_generator.py
-    app.js
-    package.json
-    api/
-    db/
+    backend/
+      app.js
+      package.json
+      api/
+      db/
+    frontend/
 """
 
 import re
+import os
 import json
 from pathlib import Path
 from datetime import datetime
 
 SUPPORTED_STACKS_FILE = Path('supported_stacks.json')
+
+# Cache project name once at import time so it's consistent across all calls
+# even if prompt.md gets deleted mid-pipeline.
+# Priority: LYSITHEA_PROJECT_NAME env var > read from prompt.md
+_PROJECT_NAME_CACHE: str | None = None
 
 
 # ─── Project directory resolution ─────────────────────────────────────────────
@@ -31,36 +39,45 @@ SUPPORTED_STACKS_FILE = Path('supported_stacks.json')
 def get_project_name(prompt_file='prompt.md') -> str:
     """
     Read project name from prompt.md and convert to a safe folder name.
+    Result is cached after first call so deletion of prompt.md mid-pipeline
+    doesn't break path resolution.
 
     e.g. 'Book Store' -> 'book-store'
-
     Falls back to 'my-app' if prompt.md is missing or has no project name.
     """
+    global _PROJECT_NAME_CACHE
+    if _PROJECT_NAME_CACHE is not None:
+        return _PROJECT_NAME_CACHE
+
     path = Path(prompt_file)
-    if not path.exists():
-        return 'my-app'
+    if path.exists():
+        found_heading = False
+        for line in path.read_text(encoding='utf-8').splitlines():
+            if re.match(r'^#\s+Project Name', line, re.IGNORECASE):
+                found_heading = True
+                continue
+            if found_heading:
+                stripped = line.strip()
+                if stripped and not stripped.startswith('#'):
+                    name = re.sub(r'[^\w\s-]', '', stripped).strip().lower().replace(' ', '-')
+                    _PROJECT_NAME_CACHE = name
+                    return _PROJECT_NAME_CACHE
 
-    found_heading = False
-    for line in path.read_text(encoding='utf-8').splitlines():
-        if re.match(r'^#\s+Project Name', line, re.IGNORECASE):
-            found_heading = True
-            continue
-        if found_heading:
-            stripped = line.strip()
-            if stripped and not stripped.startswith('#'):
-                return re.sub(r'[^\w\s-]', '', stripped).strip().lower().replace(' ', '-')
-
-    return 'my-app'
+    _PROJECT_NAME_CACHE = 'my-app'
+    return _PROJECT_NAME_CACHE
 
 
 def get_project_dir(prompt_file='prompt.md') -> Path:
     """
     Return the root output directory for the project.
 
-    Two levels up from Lysithea/ so it sits alongside it:
-      ../../{project_name}/
+    Resolves as: LYSITHEA_PROJECT_PATH / project_name
+    e.g. D:\\Projects + blog = D:\\Projects\\blog
+
+    Falls back to cwd / project_name for CLI usage without the env var.
     """
-    return Path(__file__).parent.parent.parent / get_project_name(prompt_file)
+    base = os.environ.get('LYSITHEA_PROJECT_PATH', os.getcwd())
+    return Path(base) / get_project_name(prompt_file)
 
 
 def get_law_dir(prompt_file='prompt.md') -> Path:
@@ -188,14 +205,12 @@ def load_resources() -> list:
 
     for resource, value in functions.items():
         if isinstance(value, dict):
-            # New nested shape
             resources.append({
                 'name':       resource,
                 'operations': value.get('operations', []),
                 'frontend':   value.get('frontend', []),
             })
         else:
-            # Legacy flat shape — list of operations, no frontend config
             resources.append({
                 'name':       resource,
                 'operations': value if isinstance(value, list) else [],
@@ -225,12 +240,12 @@ def get_output_path(*parts) -> Path:
     Build a path inside the project backend directory and ensure it exists.
 
     Everything goes under backend/ — app.js, package.json, api/, db/ etc.
-    The frontend will have its own sibling frontend/ directory later.
+    The frontend will have its own sibling frontend/ directory.
 
     Usage:
-        get_output_path('.')            ->  ../../book-store/backend/
-        get_output_path('api/routes')   ->  ../../book-store/backend/api/routes/
-        get_output_path('db', 'queries')->  ../../book-store/backend/db/queries/
+        get_output_path('.')            ->  {project}/backend/
+        get_output_path('api/routes')   ->  {project}/backend/api/routes/
+        get_output_path('db', 'queries')->  {project}/backend/db/queries/
     """
     flat = []
     for p in parts:

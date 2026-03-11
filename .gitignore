@@ -15,6 +15,9 @@ __pycache__/
 dist/
 build/
 
+# Node
+lysithea-gui/node_modules/
+
 # Testing
 .pytest_cache/
 .coverage

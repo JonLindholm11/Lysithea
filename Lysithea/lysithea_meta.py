@@ -2,9 +2,9 @@
 """
 Writes and reads the .lysithea project metadata file.
 
-This file lives in the root of every Lysithea project folder and
-allows the GUI to discover, import, and track projects generated
-via the CLI — bridging the two workflows seamlessly.
+The metadata file lives at {project_dir}/.lysithea/.lysithea and allows
+the GUI to discover, import, and track projects generated via the CLI —
+bridging the two workflows seamlessly.
 
 .lysithea shape:
 {
@@ -26,22 +26,26 @@ import uuid
 import os
 from datetime import datetime, timezone
 
-META_FILENAME = '.lysithea'
+META_FILENAME  = '.lysithea'
+META_SUBDIR    = '.lysithea'   # subfolder inside the project root
 
 
 def _meta_path(project_path: str) -> str:
-    return os.path.join(project_path, META_FILENAME)
+    """Return full path to the .lysithea metadata file."""
+    return os.path.join(project_path, META_SUBDIR, META_FILENAME)
 
 
 def write_project_meta(project_path: str, stack: dict, project_name: str = None) -> dict:
     """
-    Write (or update) the .lysithea metadata file in the project folder.
+    Write (or update) the .lysithea metadata file in {project_path}/.lysithea/.
 
-    Called by orchestrator.py after planners have confirmed their law files.
+    Called by orchestrator.py after all generation is complete so the
+    project folder is guaranteed to exist.
+
     Preserves existing id and createdAt if file already exists (idempotent).
 
     Args:
-        project_path: Absolute path to the project folder.
+        project_path: Absolute path to the generated project folder (not the parent).
         stack:        Stack config dict from stack.json (via load_stack()).
         project_name: Human-readable name. Falls back to folder name if not given.
 
@@ -49,6 +53,7 @@ def write_project_meta(project_path: str, stack: dict, project_name: str = None)
         The metadata dict that was written.
     """
     meta_file = _meta_path(project_path)
+    meta_dir  = os.path.dirname(meta_file)
 
     # Preserve existing id + createdAt if already initialised
     existing = {}
@@ -61,15 +66,15 @@ def write_project_meta(project_path: str, stack: dict, project_name: str = None)
 
     now = datetime.now(timezone.utc).isoformat()
 
-    # Derive a clean name: explicit arg > prompt project_name > folder basename
+    # Derive a clean name: explicit arg > stack project_name > folder basename
     name = (
         project_name
         or stack.get('project_name')
         or os.path.basename(os.path.abspath(project_path))
     )
 
-    # Map stack.json fields to GUI-friendly keys
-    stack_inner = stack.get('stack', stack)  # handle nested or flat stack dicts
+    # Handle nested or flat stack dicts
+    stack_inner = stack.get('stack', stack)
     meta = {
         'id':        existing.get('id', str(uuid.uuid4())),
         'name':      name,
@@ -83,7 +88,7 @@ def write_project_meta(project_path: str, stack: dict, project_name: str = None)
         'updatedAt': now,
     }
 
-    os.makedirs(project_path, exist_ok=True)
+    os.makedirs(meta_dir, exist_ok=True)
     with open(meta_file, 'w', encoding='utf-8') as f:
         json.dump(meta, f, indent=2)
 
