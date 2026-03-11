@@ -39,9 +39,10 @@ function register(getWindow) {
     }
   });
 
-  // Read generated file tree (walks outputPath directory directly)
-  ipcMain.handle('read-file-tree', async (_e, { outputPath }) => {
+  // Read generated file tree (walks output/ directory)
+  ipcMain.handle('read-file-tree', async (_e, { projectPath }) => {
     try {
+      const outputPath = path.join(projectPath, 'output');
       if (!fs.existsSync(outputPath)) return { ok: true, files: [] };
 
       const walk = (dir, depth = 0) => {
@@ -69,7 +70,7 @@ function register(getWindow) {
   // Read individual file content for preview
   ipcMain.handle('read-file', async (_e, { projectPath, filePath }) => {
     try {
-      const fullPath = path.join(projectPath, filePath);
+      const fullPath = path.join(projectPath, 'output', filePath);
       if (!fs.existsSync(fullPath)) return { ok: false, error: 'File not found' };
       const content = fs.readFileSync(fullPath, 'utf8');
       return { ok: true, content };
@@ -81,8 +82,8 @@ function register(getWindow) {
   // Read pattern files from repo Patterns/ directory
   ipcMain.handle('read-patterns', async () => {
     try {
-      // Repo root is one level up from lysithea-gui/
-      const repoRoot    = path.resolve(__dirname, '..');
+      // __dirname is lysithea-gui/ipc/ — go up two levels to reach the repo root
+      const repoRoot    = path.resolve(__dirname, '../..');
       const patternsDir = path.join(repoRoot, 'Patterns');
 
       if (!fs.existsSync(patternsDir)) {
