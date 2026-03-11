@@ -1,5 +1,5 @@
 # Project Name
-Blog
+test
 
 # Stack
 Frontend: React 18 + Tailwind
@@ -7,8 +7,8 @@ Backend: Express.js + Node 20
 Database: PostgreSQL
 
 # Features
-- Users: crud
-- Posts: crud
+- users: read
+- products: crud
 
 # API Requirements
 - Security: JWT
@@ -17,15 +17,12 @@ Database: PostgreSQL
 - Rate limiting: false
 
 # Frontend Requirements
-- Users: dashboard
-- Posts: dashboard, form
+- products: dashboard, form
 
 # Database / Schema Notes
-- Tables:
-  - users: email, username, password_hash
-  - posts: title, content, user_id
-- Relationships:
-  - posts has many users
+-Tables:
+- Users: email, username, password
+-Products: product_name, product_price
 
 # Extra Notes
 - Use async/await throughout
