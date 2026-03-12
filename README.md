@@ -192,9 +192,28 @@ Lysithea/
 
 ## Patterns
 
-Lysithea uses JavaScript pattern files as structural scaffolds. Each pattern defines the shape of a generated file with `/* PLACEHOLDER */` comments where LLM-generated logic is injected.
+Lysithea uses pattern files as structural scaffolds. Each pattern defines the shape of a generated file with `/* PLACEHOLDER */` comments where LLM-generated logic is injected.
 
 This keeps generated code structurally consistent even when the LLM output varies — the pattern is the source of truth for structure, the LLM fills in the logic.
+
+Patterns are organized by language and framework and declared in your `prompt.md` stack config. When a stack is selected, Lysithea resolves the correct pattern set automatically.
+
+```
+Patterns/
+├── Javascript/
+│   └── Express/
+├── Python/
+│   └── FastAPI/
+│   └── Django/
+├── Ruby/
+│   └── Rails/
+├── Go/
+│   └── Gin/
+└── PHP/
+    └── Laravel/
+```
+
+> Pattern contributions for any language and framework are welcome on the `patterns` branch. Generator support for new stacks will be added incrementally — see [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ---
 
@@ -217,7 +236,8 @@ Contributions are welcome. If you'd like to add a new pattern, fix a generator, 
 
 MIT © [Jon Lindholm](https://github.com/JonLindholm11)
 
-##Acknowledgements
+## Acknowledgements
 
 Built by [Jon Lindholm] | [GitHub](https://github.com/JonLindholm11) | [LinkedIn](https://www.linkedin.com/in/jon-lindholm-3507b338a/)
+
 
