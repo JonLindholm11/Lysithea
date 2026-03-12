@@ -21,6 +21,7 @@ const registry   = require('./ipc/registry');
 const filesystem = require('./ipc/filesystem');
 const generation = require('./ipc/generation');
 const tools      = require('./ipc/tools');
+const fix        = require('./ipc/fix');
 
 // ── Window ────────────────────────────────────────────────────────────────────
 let mainWindow = null;
@@ -57,6 +58,7 @@ registry.register(getWindow);
 filesystem.register(getWindow);
 generation.register(getWindow);
 tools.register(getWindow);
+fix.register(getWindow);
 
 // ── App lifecycle ─────────────────────────────────────────────────────────────
 app.whenReady().then(() => {

@@ -8,12 +8,20 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=DM+Mono:wght@300;400;500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet" />
+
+  <!-- ── Base + chrome ── -->
   <link rel="stylesheet" href="./styles/base.css" />
   <link rel="stylesheet" href="./styles/titlebar-sidebar.css" />
   <link rel="stylesheet" href="./styles/projects.css" />
-  <link rel="stylesheet" href="./styles/workspace.css" />
   <link rel="stylesheet" href="./styles/rightpanel.css" />
   <link rel="stylesheet" href="./styles/settings.css" />
+
+  <!-- ── Workspace views (split) ── -->
+  <link rel="stylesheet" href="./styles/workspace/shell.css" />
+  <link rel="stylesheet" href="./styles/workspace/config.css" />
+  <link rel="stylesheet" href="./styles/workspace/logs.css" />
+  <link rel="stylesheet" href="./styles/workspace/patterns.css" />
+  <link rel="stylesheet" href="./styles/workspace/fix.css" />
 </head>
 <body>
   <div id="app">
@@ -35,6 +43,7 @@
               <circle cx="12" cy="12" r="3"/>
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
             </svg>
+            <span class="tooltip">Settings</span>
           </button>
           <button class="sidebar-icon-btn" id="btn-ollama-status" title="Ollama Status">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -53,10 +62,18 @@
   <script src="./js/state.js"></script>
   <script src="./js/utils.js"></script>
   <script src="./js/projects.js"></script>
-  <script src="./js/workspace.js"></script>
-  <script src="./js/rightpanel.js"></script>
   <script src="./js/generation.js"></script>
   <script src="./js/settings.js"></script>
+  <script src="./js/rightpanel.js"></script>
+
+  <!-- Workspace views (split) -->
+  <script src="./js/workspace/shell.js"></script>
+  <script src="./js/workspace/config.js"></script>
+  <script src="./js/workspace/logs.js"></script>
+  <script src="./js/workspace/patterns.js"></script>
+  <script src="./js/workspace/fix.js"></script>
+
+  <!-- Render + init (must come after all views) -->
   <script src="./js/render.js"></script>
   <script src="./app.js"></script>
 </body>
