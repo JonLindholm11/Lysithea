@@ -21,7 +21,11 @@ contextBridge.exposeInMainWorld('lysithea', {
 
   // ── Generation ──────────────────────────────────────────────────────────────
   runGeneration:  (outputPath, projectId, prompt) => ipcRenderer.send('run-generation',  { projectPath: outputPath, projectId, prompt }),
-  killGeneration: (projectId)              => ipcRenderer.send('kill-generation', { projectId }),
+  killGeneration: (projectId)                     => ipcRenderer.send('kill-generation', { projectId }),
+
+  // ── Fix agent ───────────────────────────────────────────────────────────────
+  runFixAgent: (projectPath, prompt) => ipcRenderer.send('run-fix-agent', { projectPath, prompt }),
+  applyFix:    (payload)             => ipcRenderer.invoke('apply-fix', payload),
 
   // ── Context menu ────────────────────────────────────────────────────────────
   showContextMenu: (project, settings) => ipcRenderer.invoke('show-context-menu', { project, settings }),
@@ -34,6 +38,8 @@ contextBridge.exposeInMainWorld('lysithea', {
   // ── Listeners ───────────────────────────────────────────────────────────────
   onGenerationLog:      (cb) => ipcRenderer.on('generation-log',      (_e, data) => cb(data)),
   onGenerationComplete: (cb) => ipcRenderer.on('generation-complete', (_e, data) => cb(data)),
+  onFixAgentLog:        (cb) => ipcRenderer.on('fix-agent-log',       (_e, data) => cb(data)),
+  onFixAgentResult:     (cb) => ipcRenderer.on('fix-agent-result',    (_e, data) => cb(data)),
 
   // ── Cleanup ─────────────────────────────────────────────────────────────────
   removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel),
