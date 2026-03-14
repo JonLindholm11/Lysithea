@@ -39,16 +39,22 @@ function register(getWindow) {
     }
   });
 
-  // Read generated file tree (walks output/ directory)
-  ipcMain.handle('read-file-tree', async (_e, { projectPath }) => {
+  // Read file tree — walks outputPath directly (callers already pass the right root)
+  ipcMain.handle('read-file-tree', async (_e, { outputPath }) => {
     try {
-      const outputPath = path.join(projectPath, 'output');
-      if (!fs.existsSync(outputPath)) return { ok: true, files: [] };
+      if (!outputPath || !fs.existsSync(outputPath)) return { ok: true, files: [] };
 
       const walk = (dir, depth = 0) => {
-        const entries = fs.readdirSync(dir, { withFileTypes: true });
+        let entries;
+        try {
+          entries = fs.readdirSync(dir, { withFileTypes: true });
+        } catch {
+          return [];
+        }
         const results = [];
         for (const entry of entries) {
+          // Skip hidden files/folders (.lysithea, .git, node_modules, etc.)
+          if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
           const fullPath = path.join(dir, entry.name);
           const relPath  = path.relative(outputPath, fullPath);
           if (entry.isDirectory()) {
@@ -68,9 +74,10 @@ function register(getWindow) {
   });
 
   // Read individual file content for preview
+  // projectPath here is outputPath — the caller passes project.outputPath
   ipcMain.handle('read-file', async (_e, { projectPath, filePath }) => {
     try {
-      const fullPath = path.join(projectPath, 'output', filePath);
+      const fullPath = path.join(projectPath, filePath);
       if (!fs.existsSync(fullPath)) return { ok: false, error: 'File not found' };
       const content = fs.readFileSync(fullPath, 'utf8');
       return { ok: true, content };

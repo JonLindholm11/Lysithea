@@ -142,52 +142,118 @@ function getTreeState(projectId) {
   return treeState[projectId];
 }
 
+/**
+ * Converts the flat file array from IPC into a nested tree structure.
+ * Each node: { __files__: [...], <folderName>: node, ... }
+ */
+function buildFileTree(files) {
+  const root = { __files__: [] };
+  for (const file of files) {
+    // Normalise separators so we can split reliably
+    const parts = file.path.replace(/\\/g, '/').split('/');
+    let node = root;
+    for (let i = 0; i < parts.length - 1; i++) {
+      const part = parts[i];
+      if (!node[part]) node[part] = { __files__: [], __path__: parts.slice(0, i + 1).join('/') };
+      node = node[part];
+    }
+    if (file.type === 'dir') {
+      // Ensure the dir node exists (may already from a child file)
+      const dirName = parts[parts.length - 1];
+      if (!node[dirName]) node[dirName] = { __files__: [], __path__: file.path.replace(/\\/g, '/') };
+      node[dirName].__path__ = file.path.replace(/\\/g, '/');
+    } else {
+      node.__files__.push(file);
+    }
+  }
+  return root;
+}
+
+/**
+ * Renders the nested tree as HTML. Uses wrapper divs for folders so
+ * collapse/expand just toggles display on the children container —
+ * no re-render needed.
+ */
+function buildFileTreeHtml(node, ts, depth = 0) {
+  let html = '';
+  const indent = depth * 12;
+
+  // Folders first
+  for (const key of Object.keys(node)) {
+    if (key === '__files__' || key === '__path__') continue;
+    const child      = node[key];
+    const folderPath = child.__path__ || key;
+    const isOpen     = !ts.collapsed.has(folderPath);
+
+    html += `
+      <div class="ft-folder-row file-node"
+           data-type="dir"
+           data-file="${escapeAttr(folderPath)}"
+           style="padding-left:${8 + indent}px">
+        <span class="file-node-icon ft-arrow" style="color:var(--accent-bright)">${isOpen ? '▾' : '▶'}</span>
+        <span class="file-node-name">${escapeHtml(key)}</span>
+      </div>
+      <div class="ft-children" style="display:${isOpen ? 'block' : 'none'}">
+        ${buildFileTreeHtml(child, ts, depth + 1)}
+      </div>
+    `;
+  }
+
+  // Then files
+  for (const file of (node.__files__ || [])) {
+    const isSelected = ts.selectedFile === file.path;
+    const icon       = getFileIcon(file.name);
+    const color      = getFileColor(file.name);
+    html += `
+      <div class="file-node ${isSelected ? 'active' : ''}"
+           data-type="file"
+           data-file="${escapeAttr(file.path)}"
+           style="padding-left:${8 + indent}px">
+        <span class="file-node-icon" style="color:${color}">${icon}</span>
+        <span class="file-node-name">${escapeHtml(file.name)}</span>
+      </div>
+    `;
+  }
+
+  return html;
+}
+
 function renderFileTree(project) {
   if (!project.files || project.files.length === 0) {
     return `<div class="file-tree-empty">Generate your project to see output files here.</div>`;
   }
-
-  const ts = getTreeState(project.id);
-
-  return project.files.map(file => {
-    const isDir       = file.type === 'dir';
-    const isCollapsed = ts.collapsed.has(file.path);
-    const isSelected  = ts.selectedFile === file.path;
-    const indent      = file.depth * 12;
-    const icon        = isDir ? (isCollapsed ? '▶' : '▾') : getFileIcon(file.name);
-    const color       = isDir ? 'var(--accent-bright)' : getFileColor(file.name);
-
-    return `
-      <div class="file-node ${isSelected ? 'active' : ''}"
-        data-file="${escapeAttr(file.path)}"
-        data-type="${file.type}"
-        style="padding-left:${8 + indent}px"
-      >
-        <span class="file-node-icon" style="color:${color}">${icon}</span>
-        <span class="file-node-name">${file.name}</span>
-      </div>
-    `;
-  }).join('');
+  const ts   = getTreeState(project.id);
+  const tree = buildFileTree(project.files);
+  return buildFileTreeHtml(tree, ts, 0);
 }
 
 function bindFileTree(project) {
-  const tree = document.getElementById('file-tree');
-  if (!tree) return;
+  const treeEl = document.getElementById('file-tree');
+  if (!treeEl) return;
 
-  tree.querySelectorAll('.file-node').forEach(node => {
-    node.addEventListener('click', () => {
+  treeEl.querySelectorAll('.file-node').forEach(node => {
+    node.addEventListener('click', (e) => {
+      e.stopPropagation();
       const filePath = node.dataset.file;
       const fileType = node.dataset.type;
       const ts       = getTreeState(project.id);
 
       if (fileType === 'dir') {
-        if (ts.collapsed.has(filePath)) ts.collapsed.delete(filePath);
-        else ts.collapsed.add(filePath);
-        tree.innerHTML = renderFileTree(project);
-        bindFileTree(project);
+        // Toggle collapse without re-rendering the whole tree
+        const childrenEl = node.nextElementSibling;
+        const arrowEl    = node.querySelector('.ft-arrow');
+        if (ts.collapsed.has(filePath)) {
+          ts.collapsed.delete(filePath);
+          if (childrenEl) childrenEl.style.display = 'block';
+          if (arrowEl)    arrowEl.textContent = '▾';
+        } else {
+          ts.collapsed.add(filePath);
+          if (childrenEl) childrenEl.style.display = 'none';
+          if (arrowEl)    arrowEl.textContent = '▶';
+        }
       } else {
         ts.selectedFile = filePath;
-        tree.querySelectorAll('.file-node').forEach(n => n.classList.remove('active'));
+        treeEl.querySelectorAll('.file-node').forEach(n => n.classList.remove('active'));
         node.classList.add('active');
         openFilePreview(project, filePath);
       }

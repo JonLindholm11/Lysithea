@@ -162,16 +162,17 @@
   border-bottom: 1px solid var(--border);
   background: var(--space-dark);
   flex-shrink: 0;
+  gap: 12px;
+  min-width: 0;
 }
 
 .file-preview-path { font-family: var(--font-mono); font-size: 12px; color: var(--accent-bright); }
 .file-preview-lines { font-size: 11px; color: var(--text-muted); }
 
-.file-preview-body { display: flex; flex: 1; overflow: auto; }
+.file-preview-body { display: flex; flex: 1; overflow: auto; align-items: flex-start; }
 
 .line-numbers {
-  display: flex;
-  flex-direction: column;
+  display: block;           /* ← was flex/column, which clipped at viewport height */
   padding: 16px 12px;
   background: var(--space-dark);
   border-right: 1px solid var(--border);
@@ -183,7 +184,11 @@
   user-select: none;
   flex-shrink: 0;
   min-width: 40px;
+  position: sticky;         /* ← keeps line numbers visible while scrolling horizontally */
+  left: 0;
 }
+
+.line-numbers span { display: block; }
 
 .file-preview-code {
   flex: 1;

@@ -188,29 +188,39 @@
 }
 
 .file-preview-header {
-  padding: 8px 14px;
-  border-bottom: 1px solid var(--border);
-  background: var(--space-dark);
   display: flex;
   align-items: center;
   justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--space-dark);
   flex-shrink: 0;
+  gap: 12px;
+  min-width: 0;
 }
-
 .file-preview-path  { font-family: var(--font-mono); font-size: 11px; color: var(--accent-bright); }
 .file-preview-lines { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
 
-.file-preview-body { flex: 1; overflow: auto; display: flex; }
+.file-preview-body { display: flex; flex: 1; overflow: auto; align-items: flex-start; }
 
 .line-numbers {
-  padding: 12px 10px;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  user-select: none;
+  display: block;           /* ← was flex/column, which clipped at viewport height */
+  padding: 16px 12px;
+  background: var(--space-dark);
   border-right: 1px solid var(--border);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.7;
+  text-align: right;
+  user-select: none;
   flex-shrink: 0;
+  min-width: 40px;
+  position: sticky;         /* ← keeps line numbers visible while scrolling horizontally */
+  left: 0;
 }
+
+.line-numbers span { display: block; }
 
 .line-numbers span {
   font-family: var(--font-mono);
