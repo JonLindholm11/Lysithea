@@ -144,28 +144,6 @@ lysithea --fix "add pagination to the posts endpoint"
 lysithea --fix "add pagination to the posts endpoint" --path ./my-book-store
 ```
 
----
-
-## Demo Projects
-
-These projects were fully scaffolded by Lysithea. Each repo includes the original `prompt.md` used to generate it.
-
-| | Project | Complexity | Description |
-|---|---------|------------|-------------|
-| 📦 | **Project 1** | Simple | (add GitHub link) |
-| 📦 | **Project 2** | Medium | (add GitHub link) |
-| 📦 | **Project 3** | Complex | (add GitHub link) |
-
----
-
-## Community Prompts
-
-> 📁 **[lysithea-prompts](https://github.com/JonLindholm11/lysithea-prompts)** — A community-maintained library of `prompt.md` files for common app types.
-
-New to Lysithea? Browse the prompt library to find a starting point instead of writing one from scratch. Built something cool? Submit your `prompt.md` and share it with others.
-
----
-
 ## Project Structure
 
 ```
